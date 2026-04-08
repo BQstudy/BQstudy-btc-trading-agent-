@@ -1,0 +1,74 @@
+# 风控规则配置
+# 硬规则，代码层强制执行
+
+version: 'v1.0'
+created_at: '2025-01-15'
+
+# 6条硬风控规则
+risk_rules:
+  # 规则1: 单笔最大亏损
+  max_loss_per_trade_pct: 2.0
+
+  # 规则2: 单日最大亏损
+  max_loss_per_day_pct: 5.0
+
+  # 规则3: 最大杠杆倍数
+  max_leverage: 10
+
+  # 规则4: 单一方向最大仓位
+  max_position_per_direction_pct: 30.0
+
+  # 规则5: 连续亏损次数
+  max_consecutive_losses: 3
+
+  # 规则6: 最大回撤
+  max_drawdown_pct: 15.0
+
+# 执行参数
+execution:
+  # 滑点容忍
+  slippage_tolerance: 0.003  # 0.3%
+  max_slippage: 0.005  # 0.5%
+
+  # 流动性阈值
+  min_depth_ratio: 3.0  # 深度至少是订单金额的3倍
+  max_spread_pct: 0.001  # 最大价差0.1%
+
+  # 订单类型偏好
+  preferred_order_type: "limit_post_only"
+  allow_market_order: false  # 默认不允许市价单
+
+# 仓位计算参数
+position:
+  min_risk_pct: 0.005  # 最小风险0.5%
+  max_risk_pct: 0.02  # 最大风险2%
+  default_risk_pct: 0.01  # 默认风险1%
+
+  # 置信度调整
+  high_confidence_threshold: 0.8
+  high_confidence_multiplier: 1.2
+  low_confidence_threshold: 0.5
+  low_confidence_multiplier: 0.7
+
+  # 杠杆限制
+  min_leverage: 1
+  max_leverage: 10
+
+# 交易时间限制
+trading_hours:
+  enabled: false
+  # 如果启用，可以设置允许交易的时间段
+  # 格式: "HH:MM-HH:MM"
+  allowed_windows:
+    - "09:00-17:00"
+
+# 特殊事件暂停
+events:
+  # 重大经济数据发布前暂停（分钟）
+  pause_before_major_news: 30
+  # 重大事件列表
+  major_events:
+    - "FOMC"
+    - "CPI"
+    - "NFP"
+    - "GDP"

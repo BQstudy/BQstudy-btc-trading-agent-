@@ -1,0 +1,25 @@
+C:\Users\Administrator\AppData\Roaming\Python\Python314\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.4.0.post2)/charset_normalizer (3.4.6) doesn't match a supported version!
+  warnings.warn(
+E:\AI 项目开发\6、交易agent开发\1.主观交易agent\src\agent.py:122: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  "timestamp": datetime.utcnow().isoformat() + "Z",
+OpenAI client initialized with base_url: https://api.lkeap.cloud.tencent.com/coding/v3
+纸面交易模式: 开启
+
+============================================================
+交易周期开始: 2026-04-09T00:15:13.913991
+============================================================
+
+[Phase 1] 市场感知层...
+  市场类型: breakout_imminent
+
+[Phase 2] 主观判断引擎...
+  方向: bullish
+  置信度: 0.6
+
+[Phase 3] 决策执行层...
+  决策: no_trade
+
+============================================================
+交易周期完成
+============================================================
+

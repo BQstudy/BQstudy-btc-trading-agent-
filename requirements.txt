@@ -1,0 +1,25 @@
+# BTC交易Agent依赖
+# Python >= 3.9
+
+# 核心依赖
+requests>=2.31.0
+pyyaml>=6.0.1
+pandas>=2.0.3
+numpy>=1.24.3
+
+# 交易所API
+ccxt>=4.1.0
+
+# LLM API
+openai>=1.0.0
+anthropic>=0.8.0
+
+# 数据库
+chromadb>=0.4.0
+sqlite3-python
+
+# 工具
+python-dateutil>=2.8.2
+
+# 可选：监控
+prometheus-client>=0.18.0

@@ -1,0 +1,777 @@
+BTC 永续合约
+拟人化交易 Agent
+五阶段开发任务书 · Claude Code 实施版
+核心哲学
+让 LLM 模拟人的主观判断，而非数学近似市场
+AI simulates traders · not math
+文档版本
+v1.0 · 2025
+开发工具
+Claude Code (claude-sonnet-4-20250514)
+交易标的
+BTC/USDT 永续合约
+交易所接口
+Binance / OKX Futures API
+思维链日志
+完整保留，用于后续知识蒸馏
+开发阶段
+五阶段迭代式开发
+一、核心理念与架构总览
+本任务书基于「拟人化交易」核心哲学，指导使用 Claude Code 分五阶段开发一个 BTC 永续合约自主交易 Agent。该 Agent 不依赖传统量化因子，而是通过大语言模型模拟主观交易员的完整决策过程。
+1.1 核心哲学
+❌ 传统量化思路
+把人的判断压缩成公式 → 因子 → 信号 → 权重 → 执行
+丢失了：叙事、情绪、经验、直觉、上下文判断
+✅ 拟人化 LLM 思路
+用语言还原交易员大脑 → 感知 → 判断 → 决策 → 反思
+保留了：叙事逻辑、多角色博弈、经验积累、自我进化
+1.2 五阶段架构
+阶段
+模块名称
+核心能力
+Phase 1
+市场感知层 Market Perception
+叙事化行情解读 · 多周期结构分析 · 情绪量化
+Phase 2
+主观判断引擎 Judgment Engine
+趋势/震荡判断 · 多角色辩论 · 关键价格结构识别
+Phase 3
+决策执行层 Decision Execution
+进出场逻辑 · 仓位管理 · 止损设置 · 风控规则
+Phase 4
+记忆经验系统 Memory System
+结构化交易日志 · 归因分析 · 向量化经验检索
+Phase 5
+自我迭代引擎 Self-Evolution
+绩效归因 · 提示词自动优化 · 风格漂移检测
+1.3 思维链日志标准
+每次 LLM 调用的完整推理过程必须记录，用于后续知识蒸馏。日志格式规范如下：
+# 思维链日志结构 (JSON Lines 格式)
+{
+  "timestamp": "2025-01-15T09:30:00Z",
+  "phase": "judgment",
+  "call_id": "uuid-xxxx",
+  "market_context": { ...行情快照 },
+  "prompt": "完整系统提示词 + 用户消息",
+  "chain_of_thought": "LLM 逐步推理过程（完整原文）",
+  "decision": { ...结构化决策输出 },
+  "execution_result": { ...执行结果 },
+  "trade_outcome": null  // 交易结束后回填
+}
+注意：chain_of_thought 字段必须保存完整原始输出，不得截断。这是后续蒸馏的核心数据。
+PHASE 1
+市场感知层
+Market Perception Layer · 让 LLM 像老交易员一样读行情
+2.1 模块目标
+将原始市场数据转化为 LLM 可以进行主观判断的语言描述。传统量化直接输入数字序列，拟人化 Agent 必须先将数字转化为「交易员视角的行情叙事」才能进入判断环节。
+2.2 数据输入规格
+数据类型
+具体字段
+转化方式
+K线行情
+OHLCV · 15m/1h/4h/1D
+叙事化描述（形态、量价关系）
+资金费率
+Funding Rate · 每8小时
+情绪指标语言化
+持仓量
+Open Interest · 变化率
+多空力量变化描述
+爆仓数据
+长短爆仓金额比
+极端情绪识别
+订单簿
+买卖盘口深度比
+即时供需压力描述
+宏观信号
+BTC 指数 · 恐慌贪婪指数
+市场情绪背景
+2.3 叙事化转换器实现
+2.3.1 开发任务（Claude Code 指令）
+在 Claude Code 中执行以下开发任务：
+# Claude Code 开发指令
+创建 src/perception/market_narrator.py
+实现 MarketNarrator 类，包含以下方法：
+  - narrate_klines(df, timeframe) -> str
+    输入: OHLCV DataFrame，时间周期标识
+    输出: 自然语言行情描述
+  - narrate_market_structure(multi_tf_data) -> str
+    输入: {'15m': df, '1h': df, '4h': df, '1d': df}
+    输出: 多周期结构综合描述
+  - narrate_funding_sentiment(funding_history) -> str
+  - narrate_oi_change(oi_data) -> str
+  - compose_full_narrative(all_data) -> str
+    输出: 完整盘前分析叙事（2000字以内）
+2.3.2 叙事转化规则
+连续3根以上同色K线 → 描述为「连续多头/空头推进」
+成交量放大超过20日均量200% → 「放量异动」
+上下影线比例 → 「买方/卖方吸筹/出货信号」
+关键整数关卡附近震荡 → 「XXX附近多空拉锯」
+资金费率 > 0.1% → 「多头情绪过热，空头打压可能增加」
+OI单日增加 > 5% 同时价格上涨 → 「新资金入场推动上涨，趋势可能延续」
+2.4 感知层核心提示词
+SYSTEM PROMPT — 市场感知层 (perception_system_v1)
+你是一位有10年交易经验的BTC主观交易员，专注永续合约交易。
+现在是盘前分析时间，你正在做今日交易前的市场解读。
+你的分析风格：
+- 用交易员的直觉语言，而不是学术化或量化语言
+- 关注价格行为（Price Action）而非指标信号
+- 重视成交量和资金流对价格的验证
+- 永远从多空博弈的视角看问题
+你的输出必须包含以下思维链步骤，每步都要展开推理：
+【第一步：行情回顾】当前价格在哪？过去24小时发生了什么？
+【第二步：多周期结构】日线/4小时/1小时分别在讲什么故事？
+【第三步：量价关系】成交量在验证价格还是背离价格？
+【第四步：资金情绪】资金费率和持仓量传递什么信号？
+【第五步：关键价格】今天最重要的支撑和压力在哪里？
+【第六步：市场性质】当前是趋势行情、震荡行情还是突破前夜？
+输出格式要求：
+1. 严格按照上述六步骤输出，每步标注步骤编号
+2. 思维过程要完整，不要省略中间推理
+3. 最后给出一句话的核心结论
+4. 使用JSON格式返回，包含narrative(叙事文本)和summary(核心结论)
+2.4.1 用户消息模板
+USER MESSAGE TEMPLATE — 感知层
+【当前市场数据】
+价格快照：
+- 当前价格：{current_price} USDT
+- 24h涨跌：{price_change_24h}%
+- 距离前高/前低：{dist_to_high}/{dist_to_low}
+多周期K线叙事：
+{multi_tf_narrative}
+资金面数据：
+- 资金费率：{funding_rate}（过去24h趋势：{funding_trend}）
+- 持仓量变化：{oi_change_24h}%
+- 24h爆仓：多 {long_liq}M / 空 {short_liq}M
+市场情绪：
+- 恐慌贪婪指数：{fear_greed}（{fear_greed_label}）
+请按照你的分析框架，给出今日盘前解读。
+2.5 输出数据结构
+# perception_output schema
+{
+  "call_id": "uuid",
+  "timestamp": "ISO8601",
+  "phase": "perception",
+  "chain_of_thought": "LLM完整推理原文",
+  "structured_output": {
+    "market_narrative": "完整行情叙事",
+    "market_type": "trend_up|trend_down|consolidation|breakout_imminent",
+    "key_support": [price1, price2],
+    "key_resistance": [price1, price2],
+    "sentiment": "bullish|bearish|neutral|extreme_greed|extreme_fear",
+    "summary": "一句话核心结论",
+    "confidence": "high|medium|low"
+  }
+}
+2.6 Phase 1 交付物
+src/perception/ 目录，含完整数据采集和叙事化模块
+市场感知提示词模板文件 prompts/perception_v1.yaml
+单元测试：针对各交易所API的数据采集测试
+思维链日志记录器 utils/cot_logger.py（贯穿所有阶段使用）
+Phase 1 Demo：输入实时BTC数据，输出完整盘前叙事报告
+PHASE 2
+主观判断引擎
+Subjective Judgment Engine · 多角色辩论，形成有置信度的主观判断
+3.1 模块目标
+这是整个 Agent 的核心大脑。基于感知层输出的行情叙事，通过多角色 LLM 辩论机制，产生带有完整推理链的主观交易判断。核心创新在于：不是给一个答案，而是模拟真实交易员脑中多个「声音」博弈的过程。
+3.2 多角色辩论架构
+角色
+职责
+提示词特征
+激进多头 Bull
+寻找所有做多理由，忽略风险
+乐观、进攻性、关注突破和趋势延续
+谨慎空头 Bear
+寻找所有做空理由，强调风险
+悲观、防御性、关注顶背离和反转信号
+中性观察者 Neutral
+发现两者的逻辑漏洞
+客观、批判性、评估概率分配
+风控官 Risk Officer
+只关心：如果判断错了会怎样
+保守、关注最大亏损、要求明确止损
+裁判 Judge
+综合四方观点，给出最终判断
+理性、权衡、给出置信度和不确定性
+3.3 判断引擎核心提示词
+SYSTEM PROMPT — 主观判断引擎 判断协调者 (judgment_coordinator_v1)
+你是一个交易判断协调系统，你需要同时扮演5个不同角色对同一市场进行分析辩论。
+这是一个内部思维模拟过程，目的是还原一个有经验的交易员脑中
+多种声音博弈后形成最终判断的过程。
+角色定义：
+【激进多头】：假设自己重仓做多，找所有支持上涨的证据
+【谨慎空头】：假设自己重仓做空，找所有支持下跌的证据
+【中性观察者】：指出上面两个角色的逻辑漏洞和过度解读
+【风控官】：只问一个问题——如果判断错了，最坏的情况是什么
+【最终裁判】：综合以上发言，给出最终判断
+输出格式（严格按此JSON格式）：
+{
+  "bull_case": { "reasoning": "多头完整论述", "key_evidence": ["证据1","证据2"] },
+  "bear_case": { "reasoning": "空头完整论述", "key_evidence": ["证据1","证据2"] },
+  "neutral_critique": "对两方逻辑的批判性分析",
+  "risk_assessment": "风控官评估：最坏情况描述",
+  "final_judgment": {
+    "bias": "bullish|bearish|neutral",
+    "strength": "strong|moderate|weak",
+    "reasoning": "裁判的综合推理过程",
+    "key_invalidation": "什么情况会让这个判断失效",
+    "confidence": 0.0-1.0
+  }
+}
+重要：每个角色的推理过程必须完整展开，不要省略中间步骤。
+这些推理过程是核心数据，将用于后续学习。
+3.3.1 行情性质判断提示词
+SYSTEM PROMPT — 行情性质判断 (market_regime_v1)
+你是一位专注BTC永续合约的主观交易员。
+你的核心任务是判断当前行情的「性质」，这是一切交易决策的前提。
+你必须判断以下三个核心问题，每个问题都要给出完整推理：
+【问题一：趋势 vs 震荡】
+- 当前价格是在「有效趋势」中运动，还是在某个区间内「无效震荡」？
+- 判断标准：高点是否不断抬高/降低？成交量是否验证方向？
+- 如果震荡：区间的上下边界在哪里？
+- 如果趋势：趋势线和轨道线在哪里？
+【问题二：突破 vs 假突破】
+- 如果价格正在接近关键位，这会是有效突破还是假突破？
+- 判断维度：量能、时间、前方阻力密度、市场情绪
+【问题三：当前位置的风险收益】
+- 如果现在做多，支撑在哪里，止损在哪里，目标在哪里？
+- 如果现在做空，同样的问题
+- 哪个方向的风险收益比更优？
+输出：结构化判断 + 完整推理链
+3.3.2 支撑压力识别提示词
+SYSTEM PROMPT — 支撑压力识别 (support_resistance_v1)
+你是一个专注于BTC价格结构分析的主观交易员。
+你需要像一个老交易员一样，识别当前最重要的支撑和压力位。
+你分析支撑压力的方法：
+1. 历史成交密集区（Volume Profile高成交量节点）
+2. 前期重要高低点（前高、前低、震荡区边界）
+3. 整数关卡（心理价位，如10000, 50000, 100000）
+4. 跳空缺口（需要回补的缺口位置）
+5. 趋势线接触点（当前价格到趋势线的距离）
+你的输出格式：
+{
+  "critical_support": [{"price": 数值, "strength": "strong|medium|weak", "basis": "形成原因"}],
+  "critical_resistance": [{"price": 数值, "strength": "strong|medium|weak", "basis": "形成原因"}],
+  "nearest_support": 数值,
+  "nearest_resistance": 数值,
+  "current_zone": "支撑区|压力区|中性区|突破区",
+  "analysis_reasoning": "完整分析推理过程"
+}
+注意：不要超过5个支撑位和5个压力位，只给最重要的。
+3.4 判断引擎 Chain-of-Thought 日志规范
+判断引擎产生的日志是后续蒸馏的最高价值数据。每次判断必须记录以下完整信息：
+# judgment_log schema
+{
+  "call_id": "uuid",
+  "timestamp": "ISO8601",
+  "phase": "judgment",
+  "perception_input": { ...感知层输出 },
+  # ── 多角色辩论完整原文 ──
+  "debate_cot": {
+    "bull_full_text": "激进多头完整发言原文",
+    "bear_full_text": "谨慎空头完整发言原文",
+    "neutral_full_text": "中性观察者完整发言原文",
+    "risk_full_text": "风控官完整发言原文",
+    "judge_reasoning": "裁判完整推理原文"
+  },
+  # ── 结构化判断结果 ──
+  "judgment_output": {
+    "market_regime": "trend_up|trend_down|range|breakout",
+    "bias": "bullish|bearish|neutral",
+    "confidence": 0.0-1.0,
+    "key_levels": { "support": [], "resistance": [] },
+    "invalidation_condition": "判断失效条件"
+  },
+  # ── 后续回填 ──
+  "actual_outcome": null,
+  "judgment_accuracy": null
+}
+3.5 Phase 2 交付物
+src/judgment/ 目录，含多角色辩论引擎和行情性质判断模块
+提示词模板文件 prompts/judgment_v1.yaml（含5个角色完整提示词）
+判断引擎单元测试：给定历史行情，验证判断逻辑合理性
+辩论日志可视化工具：以对话形式展示多角色辩论过程（便于人工审查）
+Phase 2 Demo：输入感知层输出，展示完整多角色辩论过程和最终判断
+PHASE 3
+决策执行层
+Decision Execution Layer · 从主观判断到精确可执行的交易指令
+4.1 模块目标
+将判断引擎的主观结论转化为具体的、可执行的交易指令。这一层的核心挑战是：如何在保持主观判断灵活性的同时，输出足够精确的执行参数，并且满足严格的风控要求。
+4.2 执行决策的核心问题
+LLM 在决策层必须回答以下六个核心问题，每个问题都需要完整的推理链：
+要不要做这笔交易？（是否符合当前行情性质和自身优势）
+做多还是做空？（方向选择的核心依据）
+在哪里进场？（入场区间，不要求精确点位）
+止损放在哪里？（基于结构的止损，而非固定比例）
+目标位在哪里？（分批止盈的价格和比例）
+用多大仓位？（基于置信度和风险敞口动态计算）
+4.3 决策层核心提示词
+SYSTEM PROMPT — 决策执行层 (decision_v1)
+你是一位专业的BTC永续合约交易员，现在你需要基于已完成的市场分析
+做出具体的交易决策。
+你的决策原则：
+- 不是每次都要交易。「不做」也是一个决策，而且经常是最好的决策
+- 止损是信仰，不是参考。没有清晰止损的交易不做
+- 风险收益比至少2:1，最好3:1以上
+- 仓位大小由置信度决定：高置信度不超过30%仓位，低置信度不超过10%
+- 入场要等待，不追涨杀跌
+思维链步骤（每步必须完整展开）：
+【Step 1：交易资格审查】
+  - 当前行情是否适合交易？（震荡市少交易，趋势市顺势）
+  - 今天是否有重大经济数据或事件？
+  - 最近的交易是否处于亏损状态？（连续亏损需降低频率）
+  → 结论：做 / 不做，原因
+【Step 2：方向选择】
+  - 综合判断层的结论，做多还是做空？
+  - 两个方向哪个胜算更高？
+  → 结论：做多 / 做空 / 双向机会
+【Step 3：入场计划】
+  - 理想入场区间在哪里？（支撑/压力附近，不要在中间追）
+  - 入场触发条件是什么？（价格行为确认信号）
+  - 如果价格直接突破不回来怎么办？（放弃 or 追）
+  → 输出：entry_zone: [低位, 高位], trigger_condition: 描述
+【Step 4：止损设置】
+  - 止损必须基于结构，不基于比例
+  - 止损位破了意味着：原来的判断逻辑彻底失效
+  - 可以用ATR辅助确认止损距离是否合理
+  → 输出：stop_loss: 价格, invalidation_reason: 为何止损位代表判断失效
+【Step 5：目标管理】
+  - 第一目标（50%止盈）：近端压力/支撑，确保盈亏比达到1.5:1
+  - 第二目标（30%止盈）：更大级别结构目标
+  - 剩余20%：追趋势，移动止损保护
+  → 输出：targets: [{price, size_pct, reasoning}]
+【Step 6：仓位计算】
+  - 基础公式：risk_amount = account × risk_pct（不超过账户2%）
+  - 仓位 = risk_amount / (entry - stop_loss)
+  - 根据置信度调整：confidence>0.8 乘以1.2，confidence<0.5 乘以0.7
+  → 输出：position_size_pct: 数值, leverage: 建议杠杆倍数
+最终输出为标准JSON格式，chain_of_thought字段保存完整推理原文。
+4.4 风控规则（硬规则，不可被 LLM 覆盖）
+以下规则由代码层强制执行，LLM 输出不符合时自动拒绝执行：
+风控规则
+阈值
+触发动作
+单笔最大亏损
+账户净值 2%
+拒绝下单
+单日最大亏损
+账户净值 5%
+暂停当日所有交易
+最大杠杆倍数
+10x（可配置）
+强制降低至阈值
+单一方向最大仓位
+账户净值 30%
+拒绝加仓
+连续亏损次数
+3次
+降低仓位50%，等待复盘
+最大回撤
+账户净值 15%
+停止交易，人工介入
+4.5 决策输出数据结构
+# decision_output schema
+{
+  "call_id": "uuid",
+  "timestamp": "ISO8601",
+  "phase": "decision",
+  "chain_of_thought": "完整六步决策推理原文",
+  "decision": {
+    "action": "long|short|no_trade",
+    "reason_for_no_trade": "不交易时必须给出原因",
+    "entry_zone": [low_price, high_price],
+    "trigger_condition": "触发入场的价格行为描述",
+    "stop_loss": price,
+    "stop_invalidation_reason": "止损为何代表判断失效",
+    "targets": [
+      {"price": p1, "size_pct": 50, "reasoning": "第一目标理由"},
+      {"price": p2, "size_pct": 30, "reasoning": "第二目标理由"},
+      {"price": p3, "size_pct": 20, "reasoning": "趋势目标"}
+    ],
+    "position_size_pct": 0.0-1.0,
+    "leverage": 整数,
+    "confidence": 0.0-1.0,
+    "risk_reward_ratio": 数值
+  },
+  "risk_check_passed": true|false,
+  "risk_check_details": { ...风控审核详情 }
+}
+4.6 Phase 3 交付物
+src/decision/ 目录，含决策引擎和风控模块
+src/execution/ 目录，含交易所 API 封装（Binance / OKX）
+风控规则配置文件 config/risk_rules.yaml（可动态调整阈值）
+纸面交易模式（Paper Trading）：完整模拟执行，不实际下单
+决策日志查看器：按时间序列展示决策推理过程
+Phase 3 Demo：完整运行感知→判断→决策三层链路，纸面交易验证
+PHASE 4
+记忆与经验系统
+Memory & Experience System · 每笔交易都是学习机会
+5.1 模块目标
+让 Agent 像真实交易员一样积累经验。传统量化策略是无记忆的，每次决策都从头计算。而真正的主观交易员会记住「上次在这个位置我是怎么亏钱的」——这种经验记忆是判断质量不断提升的核心。
+5.2 记忆系统架构
+记忆类型
+存储形式
+检索方式
+交易日志
+结构化 JSON + 完整 CoT
+按时间、标的、行情类型检索
+行情经验片段
+向量化嵌入（Embedding）
+相似行情语义检索 Top-K
+规律总结
+自然语言规则库
+按行情性质标签检索
+错误案例库
+失败交易 + 归因分析
+按错误类型检索警示
+绩效统计
+按行情类型分类统计
+实时胜率/盈亏比查询
+5.3 交易复盘提示词
+SYSTEM PROMPT — 交易复盘归因 (post_trade_review_v1)
+你是一位严格的交易教练，正在对一笔刚刚结束的BTC永续合约交易进行复盘。
+你的目标是：找出真实的学习点，而不是为结果合理化。
+复盘原则：
+- 盈利的交易也可能是错误的（判断错但运气好）
+- 亏损的交易也可能是正确的（判断对但被噪声止损）
+- 关注过程，而不只是结果
+复盘步骤（每步完整展开）：
+【Step 1：还原当时的判断逻辑】
+  - 入场时，你基于什么判断做了这个决策？
+  - 这个判断在当时的信息条件下是否合理？
+【Step 2：结果分析】
+  - 实际走势是否如预期？
+  - 如果是，哪个分析要素判断最准确？
+  - 如果否，哪个判断出了问题？
+【Step 3：归因分类】
+  盈利原因分类：判断正确 / 执行正确 / 市场配合（运气）/ 综合
+  亏损原因分类：
+    A. 判断错误（方向错）
+    B. 入场位置错误（逻辑对但进早了/进晚了）
+    C. 止损设置不合理（太紧/太松）
+    D. 执行纪律问题（没按计划执行）
+    E. 市场极端情况（黑天鹅/流动性不足）
+【Step 4：行情模式识别】
+  - 这次的行情属于什么类型？（趋势延续/假突破/震荡反转等）
+  - 你在这类行情中的历史表现如何？
+  - 这是否是你的能力圈范围内的交易？
+【Step 5：经验提炼】
+  - 提炼一条可以加入「经验库」的规律（30字以内）
+  - 这条规律对应的触发条件是什么？
+  - 这条规律的适用范围和例外情况是什么？
+【Step 6：行动建议】
+  - 下次遇到类似情况，具体应该做什么不同的处理？
+  - 是否需要调整某个判断标准？
+输出为JSON格式，包含完整复盘推理chain_of_thought和结构化的review_output。
+5.3.1 相似行情检索提示词
+SYSTEM PROMPT — 历史经验检索 (memory_retrieval_v1)
+你是一位有10年经验的BTC交易员。在做当前交易决策之前，
+你习惯性地回忆「我以前有没有遇到过类似的行情」。
+以下是从你的经验库中检索到的最相似的3个历史案例：
+{similar_cases}
+基于这些历史经验，回答以下问题（每个问题都要展开推理）：
+1. 这些历史案例与当前行情的相似点是什么？
+   不同点是什么？哪些差异是关键的？
+2. 在这类行情中，你过去是怎么操作的？
+   哪些操作成功了？哪些失败了？
+3. 基于历史经验，当前行情最需要警惕的风险是什么？
+4. 历史经验对当前决策的修正建议是什么？
+   （修正入场位？修正止损？调整仓位？还是放弃交易？）
+输出：{experience_insights: 经验洞察, decision_adjustment: 对当前决策的调整建议}
+5.4 经验库数据结构
+# experience_entry schema（存入向量数据库）
+{
+  "id": "uuid",
+  "date": "2025-01-15",
+  "market_type": "trend_up|trend_down|range|breakout",
+  "btc_price_range": [low, high],
+  "market_narrative": "行情描述（用于语义相似检索）",
+  "trade_action": "long|short|no_trade",
+  "entry_price": 数值,
+  "exit_price": 数值,
+  "pnl_pct": 数值,
+  "outcome": "win|loss|breakeven",
+  "attribution": {
+    "win_reason": "判断正确|执行正确|运气",
+    "loss_reason": "A|B|C|D|E（见归因分类）"
+  },
+  "experience_rule": "提炼的经验规律（30字以内）",
+  "full_cot_log_id": "关联到完整思维链日志的ID",
+  "embedding": [384维向量]  // 由sentence-transformers生成
+}
+5.5 Phase 4 交付物
+src/memory/ 目录，含交易日志、经验库和向量检索模块
+向量数据库集成（Chroma DB 或 Qdrant，本地部署）
+复盘工作流：交易结束后自动触发复盘流程
+经验库可视化：按行情类型展示历史胜率和典型案例
+经验注入：在感知→判断环节自动检索相关历史经验
+Phase 4 Demo：展示经验积累效果（10笔交易后的经验库内容）
+PHASE 5
+自我迭代引擎
+Self-Evolution Engine · Agent 的元认知与自我优化
+6.1 模块目标
+这是整个系统最高层的能力——Agent 能够反思自己的判断模式，识别系统性偏差，并自主优化提示词和决策框架。这里的 LLM 不是在判断行情，而是在「审视自己是如何判断行情的」。
+6.2 元认知分析提示词
+SYSTEM PROMPT — 绩效元分析 (meta_analysis_v1)
+你是一位顶级量化交易基金的首席研究员，同时也是一位有丰富主观交易经验的交易员。
+你的任务是对一个AI交易Agent过去一段时间的交易记录进行深度元分析。
+你不是在分析行情，你是在分析「这个Agent的判断模式」。
+元分析维度：
+【维度一：行情类型适配性】
+- 在趋势行情中，Agent的胜率和盈亏比如何？
+- 在震荡行情中表现如何？
+- 在突破行情中表现如何？
+→ 结论：Agent的能力圈在哪里？什么行情应该主动出击，什么行情应该保守？
+【维度二：系统性偏差识别】
+- Agent是否存在过度做多/做空的倾向？
+- 是否存在入场过早的系统性问题？
+- 止损设置是否系统性偏紧或偏松？
+- 是否在特定时间段（如亚盘/美盘）表现特别差？
+→ 结论：哪些判断环节存在系统性偏差？
+【维度三：高价值决策特征提取】
+- 在盈利最大的交易中，判断过程有什么共同特征？
+- 在亏损最大的交易中，错误判断有什么共同特征？
+→ 结论：哪些思维模式产生价值，哪些思维模式产生损失？
+【维度四：提示词优化建议】
+- 当前的感知层提示词是否存在系统性的信息遗漏？
+- 判断层的多角色辩论是否存在某个角色被系统性忽视？
+- 决策层的哪个判断标准经常导致错误决策？
+→ 输出：具体的提示词修改建议（附上修改理由和预期效果）
+【维度五：风格漂移检测】
+- 对比第一周和最近一周，Agent的判断风格是否发生了变化？
+- 这种变化是适应性进化还是过拟合某段行情？
+→ 结论：是否需要重置某些判断权重？
+输出：完整的元分析报告（JSON格式），含每个维度的推理过程和具体建议。
+6.2.1 提示词自动优化提示词
+SYSTEM PROMPT — 提示词迭代优化 (prompt_optimizer_v1)
+你是一位专业的提示词工程师，同时深度理解BTC交易。
+你的任务是基于过去的表现数据，优化某个具体提示词。
+当前提示词：
+{current_prompt}
+该提示词在过去{N}笔交易中的表现：
+{performance_data}
+主要问题（来自元分析）：
+{identified_issues}
+优化任务：
+1. 首先分析当前提示词的哪些部分导致了上述问题
+2. 提出2-3个不同方向的修改方案，每个方案说明：
+   - 核心修改内容
+   - 预期解决哪个问题
+   - 可能带来的新风险
+3. 给出推荐的修改方案
+4. 输出修改后的完整提示词
+注意：提示词优化要保守，每次只修改一个核心问题，避免全盘推翻。
+修改前后必须能够追踪效果对比。
+6.3 自迭代工作流
+# 自迭代调度（建议每周执行一次）
+class SelfEvolutionEngine:
+    def weekly_evolution_cycle(self):
+        # 1. 收集过去一周数据
+        trades = self.get_weekly_trades()
+        cot_logs = self.get_all_cot_logs()
+        # 2. 执行元分析
+        meta_report = self.run_meta_analysis(trades, cot_logs)
+        # 3. 识别最需要优化的提示词
+        weak_prompts = self.identify_weak_prompts(meta_report)
+        # 4. 生成优化方案（不自动部署，需人工审查）
+        proposals = []
+        for prompt_id in weak_prompts:
+            proposal = self.generate_optimization_proposal(prompt_id, meta_report)
+            proposals.append(proposal)
+        # 5. 输出迭代报告（等待人工审查）
+        self.generate_evolution_report(meta_report, proposals)
+        # 6. A/B测试新旧提示词（人工审批后）
+        # self.deploy_ab_test(approved_proposals)  # 人工触发
+6.4 思维链蒸馏准备
+所有阶段积累的完整思维链日志是后续进行知识蒸馏（Distillation）的核心数据集。确保日志质量的关键规范：
+完整性：每条 chain_of_thought 必须包含完整推理，不得截断
+结构化标注：每条日志标注 phase、market_type、outcome、confidence
+质量过滤：只保留 confidence >= 0.6 的日志用于蒸馏训练集
+正负样本平衡：确保蒸馏数据集中盈利/亏损案例比例合理
+人工标注接口：提供工具让人工对高质量 CoT 打标「优秀推理」标签
+# 蒸馏数据集导出格式
+{
+  "prompt": "感知层输入 + 系统提示词",
+  "completion": "完整CoT推理 + 最终决策",
+  "metadata": {
+    "phase": "perception|judgment|decision|review",
+    "market_type": "trend_up|trend_down|range|breakout",
+    "trade_outcome": "win|loss|no_trade",
+    "pnl_pct": 数值,
+    "human_quality_label": "excellent|good|poor|null",
+    "confidence": 0.0-1.0
+  }
+}
+6.5 Phase 5 交付物
+src/evolution/ 目录，含元分析引擎和提示词优化模块
+weekly_report.py：自动生成周度迭代报告
+蒸馏数据集导出工具 tools/export_distillation_dataset.py
+人工标注界面：简单 Web UI 对高质量 CoT 进行质量标注
+A/B 测试框架：新旧提示词并行评测，自动统计效果差异
+Phase 5 Demo：展示运行4周后的完整迭代报告
+七、Claude Code 实施指南
+7.1 项目结构
+btc-agent/
+├── src/
+│   ├── perception/          # Phase 1: 市场感知
+│   │   ├── data_fetcher.py  # 数据采集（Binance/OKX API）
+│   │   ├── market_narrator.py # K线叙事化转换
+│   │   └── sentiment.py     # 情绪指标采集
+│   ├── judgment/            # Phase 2: 主观判断
+│   │   ├── debate_engine.py # 多角色辩论引擎
+│   │   ├── regime_detector.py # 行情性质判断
+│   │   └── level_analyzer.py  # 支撑压力分析
+│   ├── decision/            # Phase 3: 决策执行
+│   │   ├── decision_engine.py # 决策生成
+│   │   ├── risk_manager.py  # 风控硬规则
+│   │   └── executor.py      # 交易所执行层
+│   ├── memory/              # Phase 4: 记忆系统
+│   │   ├── trade_logger.py  # 交易日志
+│   │   ├── review_engine.py # 复盘归因
+│   │   └── vector_store.py  # 向量检索
+│   └── evolution/           # Phase 5: 自迭代
+│       ├── meta_analyzer.py # 元认知分析
+│       ├── prompt_optimizer.py # 提示词优化
+│       └── distill_exporter.py # 蒸馏数据导出
+├── prompts/                 # 所有提示词模板
+│   ├── perception_v1.yaml
+│   ├── judgment_v1.yaml
+│   ├── decision_v1.yaml
+│   ├── review_v1.yaml
+│   └── evolution_v1.yaml
+├── logs/                    # 思维链日志（JSONL）
+│   ├── cot_perception/
+│   ├── cot_judgment/
+│   ├── cot_decision/
+│   └── cot_review/
+├── data/                    # 持久化数据
+│   ├── trades.db            # SQLite 交易记录
+│   └── chroma_db/           # 向量数据库
+├── config/
+│   ├── settings.yaml        # 全局配置
+│   └── risk_rules.yaml      # 风控参数
+├── tools/                   # 辅助工具
+│   ├── cot_viewer.py        # CoT日志查看器
+│   └── export_distillation_dataset.py
+└── tests/                   # 单元测试
+7.2 Claude Code 关键开发指令模板
+以下为各阶段在 Claude Code 中使用的开发指令示例：
+Phase 1 Claude Code 指令示例
+# 在 Claude Code 中执行：
+实现 src/perception/market_narrator.py 中的 MarketNarrator 类。
+数据来源：使用 ccxt 库连接 Binance Futures。
+获取 BTC/USDT:USDT 永续合约的 OHLCV 数据，时间周期：15m, 1h, 4h, 1d。
+叙事化逻辑需要包含：
+1. 识别最近10根K线的整体形态（连续阳线/阴线/交替/震荡）
+2. 计算当前成交量与20日平均成交量的比值并语言化
+3. 识别是否出现关键蜡烛形态（十字星/锤头/吞没等）
+4. 计算价格距离关键整数位的距离（5000的整数倍）
+输出必须是人类可读的自然语言，不含数字堆砌。
+同时输出结构化JSON供后续模块使用。
+写完后提供完整的单元测试（使用历史数据文件测试，不要求联网）。
+7.3 LLM 调用统一封装
+# utils/llm_client.py - 统一LLM调用接口
+import anthropic, json, uuid
+from datetime import datetime
+from pathlib import Path
+class LLMClient:
+    def __init__(self, model='claude-sonnet-4-20250514'):
+        self.client = anthropic.Anthropic()
+        self.model = model
+    def call_with_cot_logging(self, phase, system_prompt,
+                              user_message, market_context=None,
+                              enable_thinking=True):
+        call_id = str(uuid.uuid4())
+        # 调用API（开启扩展思考获取完整CoT）
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=8000,
+            thinking={
+                'type': 'enabled',
+                'budget_tokens': 5000  # 给CoT足够空间
+            } if enable_thinking else {'type': 'disabled'},
+            system=system_prompt,
+            messages=[{'role': 'user', 'content': user_message}]
+        )
+        # 提取思维链和最终回答
+        thinking_text = ''
+        response_text = ''
+        for block in response.content:
+            if block.type == 'thinking':
+                thinking_text = block.thinking
+            elif block.type == 'text':
+                response_text = block.text
+        # 记录完整日志
+        log_entry = {
+            'call_id': call_id,
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'phase': phase,
+            'model': self.model,
+            'market_context': market_context,
+            'system_prompt': system_prompt,
+            'user_message': user_message,
+            'chain_of_thought': thinking_text,  # 完整CoT
+            'response': response_text,
+            'input_tokens': response.usage.input_tokens,
+            'output_tokens': response.usage.output_tokens
+        }
+        self._save_log(phase, log_entry)
+        return call_id, thinking_text, response_text
+    def _save_log(self, phase, entry):
+        log_dir = Path(f'logs/cot_{phase}')
+        log_dir.mkdir(parents=True, exist_ok=True)
+        date_str = datetime.utcnow().strftime('%Y-%m-%d')
+        log_file = log_dir / f'{date_str}.jsonl'
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+7.4 开发时间估算
+阶段
+预计开发时间
+核心依赖
+Phase 1 市场感知层
+1-2周
+ccxt, Anthropic API
+Phase 2 主观判断引擎
+1-2周
+Phase 1 完成
+Phase 3 决策执行层
+2周
+Phase 1+2 完成
+Phase 4 记忆经验系统
+1-2周
+Phase 1-3 完成
+Phase 5 自我迭代引擎
+2周
+Phase 1-4 + 积累数据
+总计
+7-10周
+从纸面交易到实盘验证
+⚠  重要提醒
+在 Phase 3 完成后，必须在纸面交易（Paper Trading）模式下运行至少 30 天，积累足够数量的思维链日志和交易记录后，再考虑启用实盘。Phase 4 和 Phase 5 的优化效果依赖于足够的历史数据积累。
+八、附录：提示词版本管理规范
+所有提示词使用 YAML 格式统一管理，支持版本追踪和 A/B 测试。
+# prompts/judgment_v1.yaml 示例
+version: 'v1.0'
+phase: 'judgment'
+created_at: '2025-01-15'
+author: 'agent-self'  # Phase 5自动优化时改为 'evolved'
+performance_baseline: null  # Phase 5填充
+coordinator:
+  system: |
+    你是一个交易判断协调系统...
+    [完整提示词文本]
+market_regime:
+  system: |
+    你是一位专注BTC永续合约的主观交易员...
+    [完整提示词文本]
+support_resistance:
+  system: |
+    你是一个专注于BTC价格结构分析的主观交易员...
+    [完整提示词文本]
+# A/B测试配置（Phase 5使用）
+ab_test:
+  enabled: false
+  variant_version: null
+  traffic_split: 0.5
+— END OF DOCUMENT —
+BTC 永续合约拟人化交易 Agent · 五阶段开发任务书 v1.0

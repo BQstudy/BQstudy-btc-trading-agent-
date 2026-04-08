@@ -1,0 +1,82 @@
+# BTC交易Agent全局配置
+version: 'v1.0'
+created_at: '2025-01-15'
+
+# 交易标的
+trading:
+  symbol: "BTC/USDT:USDT"
+  timeframes: ["15m", "1h", "4h", "1d"]
+  default_timeframe: "1h"
+
+# LLM配置
+# 腾讯云Kimi API配置 (Coding Plan)
+llm:
+  provider: "openai"  # openai/anthropic
+  model: "kimi-k2.5"
+  api_key: "sk-sp-qQKgztUaHwjapY5lblRg5KJ3tFgK4WYTgxIT20rw7u4hocom"
+  base_url: "https://api.lkeap.cloud.tencent.com/coding/v3"
+  max_tokens: 8000
+  thinking_budget: 5000
+  temperature: 0.7
+  top_p: 0.9
+
+# 交易所配置
+exchange:
+  default: "okx"  # binance/okx
+  testnet: true  # 使用测试网
+
+  binance:
+    api_key: ""  # 从环境变量 BINANCE_API_KEY 读取
+    api_secret: ""  # 从环境变量 BINANCE_API_SECRET 读取
+
+  okx:
+    # 模拟盘API Key获取: https://www.okx.com/cn/demo-v2/trade futures/BTC-USDT
+    # 或登录后访问: https://www.okx.com/account/user-api-manage
+    api_key: "bedc2600-1879-416a-9375-3c7a6c594c50"
+    api_secret: "F68A63AA108E8B6BC20BA58BF327F6A2"
+    passphrase: "Bc887720."
+
+# 风控配置（与risk_rules.yaml合并）
+risk:
+  max_loss_per_trade_pct: 2.0
+  max_loss_per_day_pct: 5.0
+  max_leverage: 10
+  max_position_per_direction_pct: 30.0
+  max_consecutive_losses: 3
+  max_drawdown_pct: 15.0
+
+# 执行配置
+execution:
+  paper_trading: true  # 默认纸面交易
+  order_type: "limit_post_only"
+  slippage_tolerance: 0.003
+  max_slippage: 0.005
+
+# 运行配置
+runtime:
+  cycle_interval_seconds: 3600  # 每小时运行一次
+  enable_logging: true
+  log_level: "INFO"
+
+# 数据存储
+storage:
+  trades_db: "data/trades.db"
+  vector_db: "data/chroma_db"
+  logs_dir: "logs"
+  reports_dir: "reports"
+
+# 通知配置
+notifications:
+  telegram:
+    enabled: true  # 开启Telegram通知
+    bot_token: "8497683014:AAEhTmi5fUA-FC3lF_wb7U3LU-U2e5SO8KE"
+    chat_id: "6415396006"
+
+  # 通知类型开关
+  notify_on:
+    trade_execution: true   # 交易执行时通知
+    trade_closed: true     # 平仓时通知
+    risk_alert: true       # 风控警报
+    daily_report: true     # 每日报告
+    system_error: true    # 系统错误
+    cycle_complete: false   # 交易周期完成

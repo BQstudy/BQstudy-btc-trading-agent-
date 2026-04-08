@@ -1,0 +1,491 @@
+"""
+BTC交易Agent - 主程序入口
+整合所有模块，实现完整交易流程
+"""
+
+import time
+import json
+from typing import Dict, Optional, Any
+from datetime import datetime
+from pathlib import Path
+
+# 各阶段模块
+from perception.data_fetcher import DataFetcher
+from perception.market_narrator import MarketNarrator
+from perception.sentiment import SentimentAnalyzer
+
+from judgment.debate_engine import DebateEngine
+from judgment.regime_detector import RegimeDetector
+from judgment.level_analyzer import LevelAnalyzer
+
+from decision.decision_engine import DecisionEngine
+from decision.risk_manager import AccountState
+from decision.executor import ExchangeExecutor
+
+from memory.trade_logger import TradeLogger, TradeLog
+from memory.review_engine import ReviewEngine
+from memory.vector_store import VectorStore, ExperienceRetriever
+
+from evolution.meta_analyzer import MetaAnalyzer
+from evolution.distill_exporter import DistillExporter
+
+from utils.llm_client import create_llm_client, MultiRoleClient
+from utils.telegram_notifier import TelegramNotifier, create_notifier_from_config
+from exchange.exchange_factory import create_exchange_client
+
+
+class BTCTradingAgent:
+    """
+    BTC永续合约交易Agent
+    整合五阶段完整流程
+    """
+
+    def __init__(self, config_path: str = "config/settings.yaml"):
+        self.config_path = config_path
+
+        # 加载配置
+        self.config = self._load_config()
+
+        # 初始化各模块
+        self._init_modules()
+
+        # 运行状态
+        self.running = False
+        self.paper_trading = True  # 默认纸面交易
+
+    def _load_config(self) -> Dict:
+        """加载配置"""
+        try:
+            import yaml
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            print(f"Warning: Failed to load config: {e}")
+            return {}
+
+    def _init_modules(self):
+        """初始化各模块"""
+        # Phase 1: 市场感知
+        exchange_id = self.config.get("exchange", {}).get("default", "okx")
+        self.data_fetcher = DataFetcher(exchange_id=exchange_id)
+        self.market_narrator = MarketNarrator()
+        self.sentiment_analyzer = SentimentAnalyzer()
+
+        # Phase 2: 主观判断
+        self.debate_engine = DebateEngine()
+        self.regime_detector = RegimeDetector()
+        self.level_analyzer = LevelAnalyzer()
+
+        # Phase 3: 决策执行
+        self.decision_engine = DecisionEngine()
+        self.executor = ExchangeExecutor()
+
+        # Phase 4: 记忆系统
+        self.trade_logger = TradeLogger()
+        self.review_engine = ReviewEngine(self.trade_logger)
+        self.vector_store = VectorStore()
+        self.experience_retriever = ExperienceRetriever(self.vector_store)
+
+        # Phase 5: 自迭代
+        self.meta_analyzer = MetaAnalyzer(self.trade_logger)
+        self.distill_exporter = DistillExporter()
+
+        # LLM客户端
+        try:
+            self.llm_client = create_llm_client(self.config_path)
+            self.multi_role_client = MultiRoleClient(self.llm_client)
+        except Exception as e:
+            print(f"Warning: LLM client initialization failed: {e}")
+            self.llm_client = None
+            self.multi_role_client = None
+
+        # 交易所客户端
+        try:
+            exchange_id = self.config.get("exchange", {}).get("default", "binance")
+            testnet = self.config.get("exchange", {}).get("testnet", True)
+            self.exchange = create_exchange_client(exchange_id, self.config_path, testnet)
+        except Exception as e:
+            print(f"Warning: Exchange client initialization failed: {e}")
+            self.exchange = None
+
+        # Telegram通知器
+        try:
+            self.notifier = create_notifier_from_config(self.config_path)
+            notify_config = self.config.get("notifications", {}).get("notify_on", {})
+            self.notify_on_trade = notify_config.get("trade_execution", True)
+            self.notify_on_close = notify_config.get("trade_closed", True)
+            self.notify_on_risk = notify_config.get("risk_alert", True)
+            self.notify_on_cycle = notify_config.get("cycle_complete", False)
+        except Exception as e:
+            print(f"Warning: Telegram notifier initialization failed: {e}")
+            self.notifier = None
+
+    def run_single_cycle(self) -> Dict[str, Any]:
+        """
+        运行单次交易周期
+
+        Returns:
+            完整周期结果
+        """
+        print(f"\n{'='*60}")
+        print(f"交易周期开始: {datetime.now().isoformat()}")
+        print(f"{'='*60}\n")
+
+        result = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "phases": {}
+        }
+
+        # 发送周期开始通知
+        if self.notifier and self.notify_on_cycle:
+            self.notifier.send_notification(
+                title="交易周期开始",
+                content=f"开始新一轮交易分析...\n模式: {'纸面交易' if self.paper_trading else '实盘交易'}",
+                message_type="info"
+            )
+
+        try:
+            # ========== Phase 1: 市场感知 ==========
+            print("[Phase 1] 市场感知层...")
+            perception_result = self._run_perception()
+            result["phases"]["perception"] = perception_result
+            print(f"  市场类型: {perception_result.get('market_type', 'unknown')}")
+
+            # ========== Phase 2: 主观判断 ==========
+            print("\n[Phase 2] 主观判断引擎...")
+            judgment_result = self._run_judgment(perception_result)
+            result["phases"]["judgment"] = judgment_result
+            print(f"  方向: {judgment_result.get('final_judgment', {}).get('bias', 'neutral')}")
+            print(f"  置信度: {judgment_result.get('final_judgment', {}).get('confidence', 0)}")
+
+            # ========== Phase 3: 决策执行 ==========
+            print("\n[Phase 3] 决策执行层...")
+
+            # 获取账户状态
+            account_state = self._get_account_state()
+
+            decision_result = self._run_decision(
+                judgment_result,
+                perception_result,
+                account_state
+            )
+            result["phases"]["decision"] = decision_result
+
+            action = decision_result.get("action", "no_trade")
+            print(f"  决策: {action}")
+
+            if action != "no_trade":
+                print(f"  入场区间: {decision_result.get('entry_zone')}")
+                print(f"  止损: {decision_result.get('stop_loss')}")
+                print(f"  仓位: {decision_result.get('position_size_pct')}%")
+
+                # 执行交易（纸面或实盘）
+                if not self.paper_trading and self.exchange:
+                    print("\n  [执行] 实盘下单...")
+                    execution_result = self._execute_trade(decision_result)
+                    result["execution"] = execution_result
+
+                    # 发送交易执行通知
+                    if self.notifier and self.notify_on_trade:
+                        self.notifier.send_trade_notification(
+                            action="开仓",
+                            symbol="BTC/USDT:USDT",
+                            side=decision_result.get("action", "long"),
+                            price=execution_result.get("price", 0),
+                            quantity=execution_result.get("quantity", 0),
+                            leverage=decision_result.get("leverage", 1),
+                            stop_loss=decision_result.get("stop_loss", 0)
+                        )
+
+            print(f"\n{'='*60}")
+            print("交易周期完成")
+            print(f"{'='*60}\n")
+
+            # 发送周期完成通知
+            if self.notifier and self.notify_on_cycle:
+                action = decision_result.get("action", "no_trade")
+                if action != "no_trade":
+                    self.notifier.send_notification(
+                        title="交易周期完成",
+                        content=f"决策: {action}\n入场: {decision_result.get('entry_zone')}\n止损: {decision_result.get('stop_loss')}\n仓位: {decision_result.get('position_size_pct')}%",
+                        message_type="success"
+                    )
+                else:
+                    self.notifier.send_notification(
+                        title="交易周期完成",
+                        content=f"决策: 不交易\n原因: {decision_result.get('reason_for_no_trade', '未满足交易条件')}",
+                        message_type="info"
+                    )
+
+            return result
+
+        except Exception as e:
+            print(f"Error in trading cycle: {e}")
+            import traceback
+            traceback.print_exc()
+            result["error"] = str(e)
+
+            # 发送错误通知
+            if self.notifier:
+                self.notifier.send_risk_alert(
+                    alert_type="系统错误",
+                    message=f"交易周期执行失败: {str(e)}",
+                    details={"错误类型": type(e).__name__}
+                )
+
+            return result
+
+    def _run_perception(self) -> Dict:
+        """运行市场感知"""
+        # 获取市场数据
+        market_data = self.data_fetcher.fetch_full_market_data()
+
+        # 生成叙事
+        narrative_result = self.market_narrator.compose_full_narrative(market_data)
+
+        # 计算事实锚点
+        regime_flags = self.sentiment_analyzer.calculate_regime_flags(
+            multi_tf_data=market_data.get("multi_tf_klines", {}),
+            funding_rate=market_data.get("funding_rate", 0),
+            oi_change_pct=market_data.get("oi_change_24h", 0),
+            orderbook=market_data.get("orderbook")
+        )
+
+        # 格式化锚点
+        flags_text = self.sentiment_analyzer.format_flags_for_prompt(regime_flags)
+
+        return {
+            **narrative_result,
+            "market_data": market_data,
+            "regime_flags": regime_flags,
+            "regime_flags_text": flags_text
+        }
+
+    def _run_judgment(self, perception_result: Dict) -> Dict:
+        """运行主观判断"""
+        # 行情性质判断
+        multi_tf = perception_result.get("market_data", {}).get("multi_tf_klines", {})
+        regime_analysis = self.regime_detector.analyze(multi_tf)
+
+        # 支撑压力分析
+        current_price = perception_result.get("market_data", {}).get("current_price", 0)
+        level_analysis = self.level_analyzer.analyze(multi_tf, current_price)
+
+        # 多角色辩论（使用LLM）
+        if self.multi_role_client:
+            # 生成用户消息
+            user_message = self.debate_engine.generate_user_message(
+                perception_output=perception_result,
+                regime_flags=perception_result.get("regime_flags", {}),
+                market_data=perception_result.get("market_data", {})
+            )
+
+            # 这里简化处理，实际应该调用多角色辩论
+            # debate_result = self.multi_role_client.call_debate(...)
+
+        # 简化：使用代码层分析结果
+        return {
+            "market_regime": regime_analysis.regime.value,
+            "regime_analysis": {
+                "trend_strength": regime_analysis.trend_strength,
+                "breakout_probability": regime_analysis.breakout_probability,
+                "trend_evidence": regime_analysis.trend_evidence,
+                "invalidation_condition": regime_analysis.invalidation_condition
+            },
+            "level_analysis": {
+                "key_supports": [s.price for s in level_analysis.critical_supports[:3]],
+                "key_resistances": [r.price for r in level_analysis.critical_resistances[:3]],
+                "current_zone": level_analysis.current_zone
+            },
+            "final_judgment": {
+                "bias": perception_result.get("sentiment", "neutral"),
+                "confidence": 0.6 if perception_result.get("confidence") == "high" else 0.4,
+                "strength": "moderate",
+                "key_invalidation": regime_analysis.invalidation_condition
+            }
+        }
+
+    def _run_decision(
+        self,
+        judgment_result: Dict,
+        perception_result: Dict,
+        account_state: AccountState
+    ) -> Dict:
+        """运行决策"""
+        # 使用决策引擎
+        decision = self.decision_engine.make_decision(
+            judgment_result=judgment_result,
+            perception_output=perception_result,
+            account_state=account_state,
+            market_data=perception_result.get("market_data", {})
+        )
+
+        return decision.to_dict()
+
+    def _get_account_state(self) -> AccountState:
+        """获取账户状态"""
+        if self.exchange:
+            try:
+                account_info = self.exchange.get_account_info()
+                positions = self.exchange.get_positions()
+
+                # 计算连续亏损
+                recent_trades = self.trade_logger.get_recent_trades(10)
+                consecutive_losses = 0
+                for trade in reversed(recent_trades):
+                    if trade.outcome == "loss":
+                        consecutive_losses += 1
+                    else:
+                        break
+
+                return AccountState(
+                    account_id="main",
+                    balance_usdt=account_info.balance_usdt,
+                    equity_usdt=account_info.equity_usdt,
+                    margin_used=account_info.margin_used,
+                    margin_ratio=account_info.margin_ratio,
+                    daily_pnl=0,  # 需要计算
+                    daily_pnl_pct=0,
+                    total_pnl=0,
+                    consecutive_losses=consecutive_losses,
+                    max_drawdown_pct=0  # 需要计算
+                )
+            except Exception as e:
+                print(f"Error getting account state: {e}")
+
+        # 默认账户状态
+        return AccountState(
+            account_id="paper",
+            balance_usdt=10000,
+            equity_usdt=10000,
+            margin_used=0,
+            margin_ratio=1.0,
+            daily_pnl=0,
+            daily_pnl_pct=0,
+            total_pnl=0,
+            consecutive_losses=0,
+            max_drawdown_pct=0
+        )
+
+    def _execute_trade(self, decision: Dict) -> Dict:
+        """执行交易"""
+        if not self.exchange:
+            return {"error": "Exchange not available"}
+
+        # 设置杠杆
+        symbol = "BTC/USDT:USDT"
+        leverage = decision.get("leverage", 1)
+        self.exchange.set_leverage(symbol, leverage)
+
+        # 创建订单
+        entry_zone = decision.get("entry_zone", [])
+        if len(entry_zone) >= 2:
+            price = (entry_zone[0] + entry_zone[1]) / 2
+        else:
+            price = entry_zone[0] if entry_zone else 0
+
+        side = "buy" if decision.get("action") == "long" else "sell"
+        quantity = decision.get("position_result", {}).get("quantity_btc", 0)
+
+        # 创建限价单
+        order = self.exchange.create_limit_order(
+            symbol=symbol,
+            side=side,
+            amount=quantity,
+            price=price,
+            post_only=True
+        )
+
+        return {
+            "order_id": order.get("id"),
+            "symbol": symbol,
+            "side": side,
+            "price": price,
+            "quantity": quantity
+        }
+
+    def run_continuous(self, interval_seconds: int = 3600):
+        """
+        持续运行
+
+        Args:
+            interval_seconds: 运行间隔（秒）
+        """
+        self.running = True
+
+        print(f"\n{'='*60}")
+        print("BTC交易Agent启动")
+        print(f"模式: {'纸面交易' if self.paper_trading else '实盘交易'}")
+        print(f"运行间隔: {interval_seconds}秒")
+        print(f"{'='*60}\n")
+
+        # 发送启动通知
+        if self.notifier:
+            self.notifier.send_notification(
+                title="Agent启动",
+                content=f"模式: {'纸面交易' if self.paper_trading else '实盘交易'}\n运行间隔: {interval_seconds}秒",
+                message_type="success"
+            )
+
+        while self.running:
+            try:
+                self.run_single_cycle()
+
+                print(f"等待 {interval_seconds} 秒...")
+                time.sleep(interval_seconds)
+
+            except KeyboardInterrupt:
+                print("\n收到停止信号，正在退出...")
+                self.running = False
+                break
+            except Exception as e:
+                print(f"Error in continuous run: {e}")
+                time.sleep(60)  # 出错后等待1分钟
+
+        print("\nAgent已停止")
+
+        # 发送停止通知
+        if self.notifier:
+            self.notifier.send_notification(
+                title="Agent停止",
+                content="Agent已正常停止运行",
+                message_type="warning"
+            )
+
+    def stop(self):
+        """停止Agent"""
+        self.running = False
+
+    def set_paper_trading(self, enabled: bool):
+        """设置纸面交易模式"""
+        self.paper_trading = enabled
+        print(f"纸面交易模式: {'开启' if enabled else '关闭'}")
+
+
+def main():
+    """主函数"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="BTC交易Agent")
+    parser.add_argument("--config", default="config/settings.yaml", help="配置文件路径")
+    parser.add_argument("--paper", action="store_true", help="纸面交易模式")
+    parser.add_argument("--once", action="store_true", help="运行单次周期")
+    parser.add_argument("--interval", type=int, default=3600, help="运行间隔（秒）")
+
+    args = parser.parse_args()
+
+    # 创建Agent
+    agent = BTCTradingAgent(args.config)
+
+    # 设置模式
+    agent.set_paper_trading(args.paper)
+
+    # 运行
+    if args.once:
+        agent.run_single_cycle()
+    else:
+        agent.run_continuous(args.interval)
+
+
+if __name__ == "__main__":
+    main()

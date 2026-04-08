@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import docx2txt; print\\(docx2txt.process\\('btc_agent_taskbook.docx'\\)\\)\")",
+      "Bash(python -c \"import docx2txt; print\\(docx2txt.process\\('btc_agent_taskbook.docx'\\)\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python -c ':*)",
+      "Bash(chcp 65001)",
+      "Read(//tmp/**)",
+      "Bash(python -m pytest tests/test_perception.py -v)",
+      "Bash(python tests/test_perception.py)",
+      "Bash(python -m pytest tests/test_judgment.py -v)",
+      "Bash(python:*)",
+      "WebSearch",
+      "WebFetch(domain:cloud.tencent.com)",
+      "Bash(set OKX_API_KEY=bedc2600-1879-416a-9375-3c7a6c594c50)",
+      "Bash(set OKX_API_SECRET=F68A63AA108E8B6BC20BA58BF327F6A2)",
+      "Bash(set OKX_PASSPHRASE=Bc887720)"
+    ]
+  }
+}

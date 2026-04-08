@@ -1,0 +1,65 @@
+# 需要上传到服务器的文件清单
+
+## 核心代码文件
+src/
+├── agent.py
+├── decision/
+│   ├── __init__.py
+│   ├── decision_engine.py
+│   ├── executor.py
+│   ├── position_calculator.py
+│   └── risk_manager.py
+├── evolution/
+│   ├── __init__.py
+│   ├── distill_exporter.py
+│   ├── meta_analyzer.py
+│   └── prompt_optimizer.py
+├── exchange/
+│   ├── __init__.py
+│   ├── binance_client.py
+│   ├── exchange_factory.py
+│   └── okx_client.py
+├── judgment/
+│   ├── __init__.py
+│   ├── debate_engine.py
+│   ├── level_analyzer.py
+│   └── regime_detector.py
+├── memory/
+│   ├── __init__.py
+│   ├── review_engine.py
+│   ├── trade_logger.py
+│   └── vector_store.py
+├── perception/
+│   ├── __init__.py
+│   ├── data_fetcher.py
+│   ├── market_narrator.py
+│   └── sentiment.py
+└── utils/
+    ├── cot_logger.py
+    ├── llm_client.py
+    └── telegram_notifier.py
+
+## 配置文件
+config/
+├── settings.yaml
+└── risk_rules.yaml
+
+## 提示词文件
+prompts/
+├── decision_v1.yaml
+├── evolution_v1.yaml
+├── judgment_v1.yaml
+├── perception_v1.yaml
+└── review_v1.yaml
+
+## 部署文件
+deploy/
+├── Dockerfile
+├── docker-compose.yml
+├── .env.example
+├── deploy.sh
+├── DEPLOY.md
+└── btc-agent.service
+
+## 其他文件
+requirements.txt

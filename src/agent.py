@@ -487,5 +487,36 @@ def main():
         agent.run_continuous(args.interval)
 
 
+# 健康检查端点
+def run_health_server():
+    """运行简单的HTTP健康检查服务器"""
+    import http.server
+    import socketserver
+    import threading
+
+    class HealthHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/health":
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status": "ok"}')
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, format, *args):
+            pass  # 静默日志
+
+    port = 8080
+    with socketserver.TCPServer(("", port), HealthHandler) as httpd:
+        print(f"健康检查服务器运行在 http://localhost:{port}/health")
+        httpd.serve_forever()
+
+
 if __name__ == "__main__":
+    # 在后台启动健康检查服务器
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+
     main()

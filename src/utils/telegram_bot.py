@@ -15,14 +15,12 @@ from enum import Enum
 
 class TradingMode(Enum):
     """交易模式枚举"""
-    PAPER = "paper"
     SIMULATION = "simulation"
     LIVE = "live"
 
     def get_display_name(self) -> str:
         """获取显示名称"""
         return {
-            TradingMode.PAPER: "纸面交易",
             TradingMode.SIMULATION: "模拟交易",
             TradingMode.LIVE: "实盘交易"
         }[self]
@@ -30,7 +28,6 @@ class TradingMode(Enum):
     def get_description(self) -> str:
         """获取描述"""
         return {
-            TradingMode.PAPER: "纯模拟，不调用交易所API",
             TradingMode.SIMULATION: "OKX模拟盘(testnet)",
             TradingMode.LIVE: "真实资金交易"
         }[self]
@@ -66,7 +63,7 @@ class TelegramBotHandler:
         self.on_get_status = on_get_status
 
         # 当前模式
-        self.current_mode = TradingMode.PAPER
+        self.current_mode = TradingMode.SIMULATION
 
         # 运行状态
         self.running = False
@@ -79,7 +76,6 @@ class TelegramBotHandler:
             "/help": self._cmd_help,
             "/mode": self._cmd_mode,
             "/status": self._cmd_status,
-            "/mode_paper": self._cmd_mode_paper,
             "/mode_simulation": self._cmd_mode_simulation,
             "/mode_live": self._cmd_mode_live,
         }
@@ -193,7 +189,6 @@ class TelegramBotHandler:
 
 <b>可用命令：</b>
 /mode - 查看/切换交易模式
-/mode_paper - 切换到纸面交易
 /mode_simulation - 切换到模拟交易
 /mode_live - 切换到实盘交易
 /status - 查看当前状态
@@ -211,7 +206,6 @@ class TelegramBotHandler:
 <b>/mode</b>
 查看当前交易模式，显示模式切换按钮
 
-<b>/mode_paper</b>
 切换到<b>纸面交易</b>模式
 • 纯模拟，不调用交易所 API
 • 仅记录决策，不下单
@@ -242,9 +236,6 @@ class TelegramBotHandler:
 
 <b>可用模式：</b>
 
-📄 <b>纸面交易 (paper)</b>
-{paper_desc}
-
 🧪 <b>模拟交易 (simulation)</b>
 {simulation_desc}
 
@@ -252,21 +243,17 @@ class TelegramBotHandler:
 {live_desc}
 
 <b>切换命令：</b>
-/mode_paper - 纸面交易
 /mode_simulation - 模拟交易
 /mode_live - 实盘交易
 """.format(
             current_mode=self.current_mode.get_display_name(),
-            paper_desc=TradingMode.PAPER.get_description(),
+            
             simulation_desc=TradingMode.SIMULATION.get_description(),
             live_desc=TradingMode.LIVE.get_description()
         )
 
         self._send_message(chat_id, mode_text)
 
-    def _cmd_mode_paper(self, chat_id: int, text: str):
-        """/mode_paper 命令"""
-        self._change_mode(chat_id, TradingMode.PAPER)
 
     def _cmd_mode_simulation(self, chat_id: int, text: str):
         """/mode_simulation 命令"""
@@ -396,9 +383,9 @@ def create_bot_handler(
         )
 
         # 从配置读取初始模式
-        mode_str = config.get("execution", {}).get("trading_mode", "paper")
+        mode_str = config.get("execution", {}).get("trading_mode", "simulation")
         mode_map = {
-            "paper": TradingMode.PAPER,
+            
             "simulation": TradingMode.SIMULATION,
             "live": TradingMode.LIVE
         }
@@ -436,7 +423,6 @@ if __name__ == "__main__":
 
     if handler.enabled:
         print("\nBot 已启动，请在 Telegram 中发送命令测试")
-        print("可用命令: /start, /help, /mode, /mode_paper, /mode_simulation, /mode_live, /status")
         handler.start()
 
         try:

@@ -15,7 +15,31 @@
       "WebFetch(domain:cloud.tencent.com)",
       "Bash(set OKX_API_KEY=bedc2600-1879-416a-9375-3c7a6c594c50)",
       "Bash(set OKX_API_SECRET=F68A63AA108E8B6BC20BA58BF327F6A2)",
-      "Bash(set OKX_PASSPHRASE=Bc887720)"
+      "Bash(set OKX_PASSPHRASE=Bc887720)",
+      "Bash(git ls-tree:*)",
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m 'docs: 添加开发记录文档:*)",
+      "Bash(ssh:*)",
+      "Bash(ssh-keygen -R 43.167.232.83)",
+      "Bash(sshpass:*)",
+      "Bash(choco install:*)",
+      "Bash(git commit:*)",
+      "Bash(curl -fsSL https://raw.githubusercontent.com/BQstudy/BQstudy-btc-trading-agent-/main/deploy/remote-deploy.sh)",
+      "Bash(curl -L -o /tmp/sshpass.tar.gz https://sourceforge.net/projects/sshpass/files/sshpass/1.09/sshpass-1.09.tar.gz/download)",
+      "Bash(tasklist)",
+      "Bash(taskkill:*)",
+      "Bash(pacman -S sshpass --noconfirm)",
+      "Bash(powershell:*)",
+      "Bash(dir \"E:\\\\AI 项目开发\\\\6、交易agent开发\\\\1.主观交易agent\\\\logs\" /b)",
+      "Bash(findstr python:*)",
+      "Bash(docker compose:*)",
+      "Bash(pkill -f \"python src/agent.py\")",
+      "Bash(sed -i 's/choices=\\\\[\"paper\", \"simulation\", \"live\"\\\\]/choices=[\"simulation\", \"live\"]/g' src/agent.py)",
+      "Bash(sed -i 's/default=\"paper\"/default=\"simulation\"/g' src/agent.py)",
+      "Bash(sed -i 's/help=\"交易模式: paper=纸面交易, simulation=模拟交易\\(OKX模拟盘\\), live=实盘交易\"/help=\"交易模式: simulation=模拟交易\\(OKX模拟盘\\), live=实盘交易\"/g' src/agent.py)"
     ]
   }
 }

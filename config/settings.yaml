@@ -46,12 +46,11 @@ risk:
   max_drawdown_pct: 15.0
 
 # 执行配置
-# 三种交易模式：
-#   paper:      纸面交易 - 纯模拟，不调用交易所API，仅记录决策
+# 两种交易模式：
 #   simulation: 模拟交易 - 使用OKX模拟盘(testnet)进行真实下单
 #   live:       实盘交易 - 使用真实资金进行交易
 execution:
-  trading_mode: "simulation"  # paper/simulation/live
+  trading_mode: "simulation"  # simulation/live
   order_type: "limit_post_only"
   slippage_tolerance: 0.003
   max_slippage: 0.005

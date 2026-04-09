@@ -14,16 +14,21 @@ from enum import Enum
 
 class TradingMode(Enum):
     """交易模式枚举"""
-    PAPER = "paper"      # 纸面交易：纯模拟，不调用交易所API
     SIMULATION = "simulation"  # 模拟交易：OKX模拟盘（testnet）
-    LIVE = "live"        # 实盘交易：真实账户
+    LIVE = "live"             # 实盘交易：真实账户
 
     def get_display_name(self) -> str:
         """获取显示名称"""
         return {
-            TradingMode.PAPER: "纸面交易",
             TradingMode.SIMULATION: "模拟交易",
             TradingMode.LIVE: "实盘交易"
+        }[self]
+
+    def get_description(self) -> str:
+        """获取描述"""
+        return {
+            TradingMode.SIMULATION: "OKX模拟盘(testnet)",
+            TradingMode.LIVE: "真实资金交易"
         }[self]
 
 
@@ -71,8 +76,8 @@ class BTCTradingAgent:
         self.running = False
         # 从配置读取交易模式，默认纸面交易
         mode_str = self.config.get("execution", {}).get("trading_mode", "paper")
-        mode_map = {"paper": TradingMode.PAPER, "simulation": TradingMode.SIMULATION, "live": TradingMode.LIVE}
-        self.trading_mode = mode_map.get(mode_str, TradingMode.PAPER)
+        mode_map = {"simulation": TradingMode.SIMULATION, "live": TradingMode.LIVE}
+        self.trading_mode = mode_map.get(mode_str, TradingMode.SIMULATION)
 
         # 自检查模块 (Layer 1)
         self.self_checker = get_self_checker()
@@ -627,7 +632,6 @@ class BTCTradingAgent:
         try:
             # 映射 BotTradingMode 到 TradingMode
             mode_map = {
-                BotTradingMode.PAPER: TradingMode.PAPER,
                 BotTradingMode.SIMULATION: TradingMode.SIMULATION,
                 BotTradingMode.LIVE: TradingMode.LIVE
             }
@@ -687,7 +691,7 @@ class BTCTradingAgent:
         """设置交易模式
 
         Args:
-            mode: TradingMode.PAPER/SIMULATION/LIVE
+            mode: TradingMode.SIMULATION/LIVE
         """
         self.trading_mode = mode
         print(f"交易模式: {mode.get_display_name()}")
@@ -699,8 +703,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="BTC交易Agent")
     parser.add_argument("--config", default="config/settings.yaml", help="配置文件路径")
-    parser.add_argument("--mode", choices=["paper", "simulation", "live"],
-                        default="paper", help="交易模式: paper=纸面交易, simulation=模拟交易(OKX模拟盘), live=实盘交易")
+    parser.add_argument("--mode", choices=["simulation", "live"],
+                        default="simulation", help="交易模式: simulation=模拟交易(OKX模拟盘), live=实盘交易")
     parser.add_argument("--once", action="store_true", help="运行单次周期")
     parser.add_argument("--interval", type=int, default=3600, help="运行间隔（秒）")
 
@@ -711,7 +715,7 @@ def main():
 
     # 设置交易模式
     mode_map = {
-        "paper": TradingMode.PAPER,
+        
         "simulation": TradingMode.SIMULATION,
         "live": TradingMode.LIVE
     }

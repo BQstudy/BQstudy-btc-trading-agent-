@@ -201,21 +201,59 @@ class BTCTradingAgent:
             print("交易周期完成")
             print(f"{'='*60}\n")
 
-            # 发送周期完成通知
+            # 发送周期完成通知（包含思考过程）
             if self.notifier and self.notify_on_cycle:
                 action = decision_result.get("action", "no_trade")
+
+                # 收集思考过程
+                perception = perception_result or {}
+                judgment = judgment_result or {}
+                decision = decision_result or {}
+
+                # Phase 1 感知摘要
+                market_narrative = perception.get("market_narrative", "")[:200] if perception.get("market_narrative") else "无"
+                sentiment = perception.get("sentiment", "unknown")
+                market_type = perception.get("market_type", "unknown")
+
+                # Phase 2 判断摘要
+                final_judgment = judgment.get("final_judgment", {})
+                bias = final_judgment.get("bias", "neutral")
+                confidence = final_judgment.get("confidence", 0)
+                debate_summary = judgment.get("debate_summary", "")[:300] if judgment.get("debate_summary") else "无"
+
+                # Phase 3 决策摘要
+                entry_zone = decision.get("entry_zone", "无")
+                stop_loss = decision.get("stop_loss", "无")
+                position_size = decision.get("position_size_pct", 0)
+                reason = decision.get("reason_for_no_trade', '无")
                 if action != "no_trade":
-                    self.notifier.send_notification(
-                        title="交易周期完成",
-                        content=f"决策: {action}\n入场: {decision_result.get('entry_zone')}\n止损: {decision_result.get('stop_loss')}\n仓位: {decision_result.get('position_size_pct')}%",
-                        message_type="success"
-                    )
-                else:
-                    self.notifier.send_notification(
-                        title="交易周期完成",
-                        content=f"决策: 不交易\n原因: {decision_result.get('reason_for_no_trade', '未满足交易条件')}",
-                        message_type="info"
-                    )
+                    reason = f"止损{stop_loss}，仓位{position_size}%"
+
+                # 组装详细通知
+                content = f"""
+📊 *市场感知*
+• 类型: {market_type}
+• 情绪: {sentiment}
+• 叙述: {market_narrative}...
+
+🧠 *主观判断*
+• 方向: {bias}
+• 置信度: {confidence:.0%}
+• 辩论: {debate_summary}...
+
+📌 *最终决策*
+• 行动: {action}
+• {reason}
+
+⏰ {datetime.now().strftime("%H:%M:%S")}
+"""
+
+                msg_type = "success" if action != "no_trade" else "info"
+                self.notifier.send_notification(
+                    title=f"交易周期完成 | {action.upper()}",
+                    content=content,
+                    message_type=msg_type
+                )
 
             return result
 

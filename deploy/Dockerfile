@@ -33,4 +33,4 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
 
 # 启动命令
-CMD ["python", "src/agent.py", "--paper", "--interval", "3600"]
+CMD ["python", "src/agent.py", "--paper", "--interval", "300"]

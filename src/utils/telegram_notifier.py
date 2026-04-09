@@ -64,7 +64,7 @@ class TelegramNotifier:
     def send_message(
         self,
         text: str,
-        parse_mode: str = "Markdown",
+        parse_mode: str = "HTML",
         disable_notification: bool = False
     ) -> bool:
         """

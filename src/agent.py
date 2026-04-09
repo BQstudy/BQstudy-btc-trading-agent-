@@ -9,6 +9,23 @@ import threading
 from typing import Dict, Optional, Any
 from datetime import datetime
 from pathlib import Path
+from enum import Enum
+
+
+class TradingMode(Enum):
+    """交易模式枚举"""
+    PAPER = "paper"      # 纸面交易：纯模拟，不调用交易所API
+    SIMULATION = "simulation"  # 模拟交易：OKX模拟盘（testnet）
+    LIVE = "live"        # 实盘交易：真实账户
+
+    def get_display_name(self) -> str:
+        """获取显示名称"""
+        return {
+            TradingMode.PAPER: "纸面交易",
+            TradingMode.SIMULATION: "模拟交易",
+            TradingMode.LIVE: "实盘交易"
+        }[self]
+
 
 # 各阶段模块
 from perception.data_fetcher import DataFetcher
@@ -54,7 +71,7 @@ class BTCTradingAgent:
 
         # 运行状态
         self.running = False
-        self.paper_trading = True  # 默认纸面交易
+        self.trading_mode = TradingMode.PAPER  # 默认纸面交易
 
         # 自检查模块 (Layer 1)
         self.self_checker = get_self_checker()
@@ -149,7 +166,7 @@ class BTCTradingAgent:
         if self.notifier and self.notify_on_cycle:
             self.notifier.send_notification(
                 title="交易周期开始",
-                content=f"开始新一轮交易分析...\n模式: {'纸面交易' if self.paper_trading else '实盘交易'}",
+                content=f"开始新一轮交易分析...\n模式: {self.trading_mode.get_display_name()}",
                 message_type="info"
             )
 
@@ -188,8 +205,8 @@ class BTCTradingAgent:
                 print(f"  止损: {decision_result.get('stop_loss')}")
                 print(f"  仓位: {decision_result.get('position_size_pct')}%")
 
-                # 执行交易（纸面或实盘）
-                if not self.paper_trading and self.exchange:
+                # 执行交易（实盘或模拟盘）
+                if self.trading_mode in [TradingMode.LIVE, TradingMode.SIMULATION] and self.exchange:
                     print("\n  [执行] 实盘下单...")
                     execution_result = self._execute_trade(decision_result)
                     result["execution"] = execution_result
@@ -241,24 +258,22 @@ class BTCTradingAgent:
                 if action != "no_trade":
                     reason = f"止损{stop_loss}，仓位{position_size}%"
 
-                # 组装详细通知
-                content = f"""
-📊 *市场感知*
+                # 组装详细通知 (使用HTML格式避免Markdown解析错误)
+                content = f"""📊 <b>市场感知</b>
 • 类型: {market_type}
 • 情绪: {sentiment}
 • 叙述: {market_narrative}...
 
-🧠 *主观判断*
+🧠 <b>主观判断</b>
 • 方向: {bias}
 • 置信度: {confidence:.0%}
 • 辩论: {debate_summary}...
 
-📌 *最终决策*
+📌 <b>最终决策</b>
 • 行动: {action}
 • {reason}
 
-⏰ {datetime.now().strftime("%H:%M:%S")}
-"""
+⏰ {datetime.now().strftime("%H:%M:%S")}"""
 
                 msg_type = "success" if action != "no_trade" else "info"
                 notify_success = self.notifier.send_notification(
@@ -537,7 +552,7 @@ class BTCTradingAgent:
 
         print(f"\n{'='*60}")
         print("BTC交易Agent启动")
-        print(f"模式: {'纸面交易' if self.paper_trading else '实盘交易'}")
+        print(f"模式: {self.trading_mode.get_display_name()}")
         print(f"运行间隔: {interval_seconds}秒")
         print(f"{'='*60}\n")
 
@@ -545,7 +560,7 @@ class BTCTradingAgent:
         if self.notifier:
             self.notifier.send_notification(
                 title="Agent启动",
-                content=f"模式: {'纸面交易' if self.paper_trading else '实盘交易'}\n运行间隔: {interval_seconds}秒",
+                content=f"模式: {self.trading_mode.get_display_name()}\n运行间隔: {interval_seconds}秒",
                 message_type="success"
             )
 
@@ -578,10 +593,14 @@ class BTCTradingAgent:
         """停止Agent"""
         self.running = False
 
-    def set_paper_trading(self, enabled: bool):
-        """设置纸面交易模式"""
-        self.paper_trading = enabled
-        print(f"纸面交易模式: {'开启' if enabled else '关闭'}")
+    def set_trading_mode(self, mode: TradingMode):
+        """设置交易模式
+
+        Args:
+            mode: TradingMode.PAPER/SIMULATION/LIVE
+        """
+        self.trading_mode = mode
+        print(f"交易模式: {mode.get_display_name()}")
 
 
 def main():
@@ -590,7 +609,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="BTC交易Agent")
     parser.add_argument("--config", default="config/settings.yaml", help="配置文件路径")
-    parser.add_argument("--paper", action="store_true", help="纸面交易模式")
+    parser.add_argument("--mode", choices=["paper", "simulation", "live"],
+                        default="paper", help="交易模式: paper=纸面交易, simulation=模拟交易(OKX模拟盘), live=实盘交易")
     parser.add_argument("--once", action="store_true", help="运行单次周期")
     parser.add_argument("--interval", type=int, default=3600, help="运行间隔（秒）")
 
@@ -599,8 +619,13 @@ def main():
     # 创建Agent
     agent = BTCTradingAgent(args.config)
 
-    # 设置模式
-    agent.set_paper_trading(args.paper)
+    # 设置交易模式
+    mode_map = {
+        "paper": TradingMode.PAPER,
+        "simulation": TradingMode.SIMULATION,
+        "live": TradingMode.LIVE
+    }
+    agent.set_trading_mode(mode_map[args.mode])
 
     # 运行
     if args.once:

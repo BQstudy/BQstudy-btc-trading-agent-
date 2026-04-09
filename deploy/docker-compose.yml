@@ -48,7 +48,7 @@ services:
     networks:
       - agent-network
 
-  # Layer 2: 监控Agent
+  # Layer 2: 监控Agent (简化版V2)
   monitor-agent:
     build:
       context: ..
@@ -65,9 +65,8 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-8497683014:AAEhTmi5fUA-FC3lF_wb7U3LU-U2e5SO8KE}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-6415396006}
 
-    # 访问宿主机docker socket (用于重启容器)
+    # 不需要docker socket，只监控不重启
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - ../data:/app/data
       - ../logs:/app/logs
       - ../monitor:/app/monitor
@@ -76,8 +75,8 @@ services:
     # 工作目录
     working_dir: /app
 
-    # 启动命令
-    command: ["python", "monitor/monitor_agent.py"]
+    # 启动命令 - 使用简化版V2
+    command: ["python", "monitor/monitor_agent_v2.py"]
 
     # 资源限制 (监控Agent资源需求较低)
     deploy:

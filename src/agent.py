@@ -49,6 +49,7 @@ from evolution.distill_exporter import DistillExporter
 
 from utils.llm_client import create_llm_client, MultiRoleClient
 from utils.telegram_notifier import TelegramNotifier, create_notifier_from_config
+from utils.telegram_bot import TelegramBotHandler, create_bot_handler, TradingMode as BotTradingMode
 from utils.cot_logger import CoTLogger
 from exchange.exchange_factory import create_exchange_client
 from self_check import get_self_checker, SelfChecker
@@ -66,18 +67,21 @@ class BTCTradingAgent:
         # 加载配置
         self.config = self._load_config()
 
-        # 初始化各模块
-        self._init_modules()
-
         # 运行状态
         self.running = False
-        self.trading_mode = TradingMode.PAPER  # 默认纸面交易
+        # 从配置读取交易模式，默认纸面交易
+        mode_str = self.config.get("execution", {}).get("trading_mode", "paper")
+        mode_map = {"paper": TradingMode.PAPER, "simulation": TradingMode.SIMULATION, "live": TradingMode.LIVE}
+        self.trading_mode = mode_map.get(mode_str, TradingMode.PAPER)
 
         # 自检查模块 (Layer 1)
         self.self_checker = get_self_checker()
 
         # CoT日志记录器
         self.cot_logger = CoTLogger()
+
+        # 初始化各模块（在 trading_mode 初始化之后）
+        self._init_modules()
 
     def _load_config(self) -> Dict:
         """加载配置"""
@@ -145,6 +149,21 @@ class BTCTradingAgent:
         except Exception as e:
             print(f"Warning: Telegram notifier initialization failed: {e}")
             self.notifier = None
+
+        # Telegram Bot 命令处理器
+        try:
+            self.bot_handler = create_bot_handler(
+                config_path=self.config_path,
+                on_mode_change=self._handle_mode_change,
+                on_get_status=self._get_agent_status
+            )
+            # 设置初始模式
+            self.bot_handler.set_mode(self.trading_mode)
+            # 启动 Bot 轮询
+            self.bot_handler.start()
+        except Exception as e:
+            print(f"Warning: Telegram bot handler initialization failed: {e}")
+            self.bot_handler = None
 
     def run_single_cycle(self) -> Dict[str, Any]:
         """
@@ -592,6 +611,77 @@ class BTCTradingAgent:
     def stop(self):
         """停止Agent"""
         self.running = False
+        if self.bot_handler:
+            self.bot_handler.stop()
+
+    def _handle_mode_change(self, new_mode: BotTradingMode) -> bool:
+        """
+        处理 Telegram Bot 的模式切换请求
+
+        Args:
+            new_mode: 新的交易模式
+
+        Returns:
+            是否切换成功
+        """
+        try:
+            # 映射 BotTradingMode 到 TradingMode
+            mode_map = {
+                BotTradingMode.PAPER: TradingMode.PAPER,
+                BotTradingMode.SIMULATION: TradingMode.SIMULATION,
+                BotTradingMode.LIVE: TradingMode.LIVE
+            }
+
+            if new_mode not in mode_map:
+                print(f"[Agent] 未知的交易模式: {new_mode}")
+                return False
+
+            target_mode = mode_map[new_mode]
+
+            # 检查是否可以切换到目标模式
+            if target_mode in [TradingMode.SIMULATION, TradingMode.LIVE]:
+                if not self.exchange:
+                    print(f"[Agent] 无法切换到 {target_mode.get_display_name()}: 交易所未初始化")
+                    return False
+
+            # 执行模式切换
+            old_mode = self.trading_mode
+            self.trading_mode = target_mode
+
+            # 更新 Bot handler 的状态
+            if self.bot_handler:
+                self.bot_handler.set_mode(new_mode)
+
+            # 发送通知
+            if self.notifier:
+                self.notifier.send_notification(
+                    title="交易模式已切换",
+                    content=f"从 {old_mode.get_display_name()} 切换到 {target_mode.get_display_name()}",
+                    message_type="warning" if target_mode == TradingMode.LIVE else "info"
+                )
+
+            print(f"[Agent] 交易模式已切换: {old_mode.get_display_name()} -> {target_mode.get_display_name()}")
+            return True
+
+        except Exception as e:
+            print(f"[Agent] 模式切换失败: {e}")
+            return False
+
+    def _get_agent_status(self) -> Dict:
+        """
+        获取 Agent 状态（供 Telegram Bot 查询）
+
+        Returns:
+            状态字典
+        """
+        return {
+            "running": "运行中" if self.running else "已停止",
+            "mode": self.trading_mode.get_display_name(),
+            "cycles_completed": getattr(self.self_checker, 'cycles_completed', 0),
+            "last_cycle": getattr(self.self_checker, 'last_cycle_time', "未知"),
+            "telegram_status": "正常" if self.notifier else "未启用",
+            "exchange_status": "已连接" if self.exchange else "未连接"
+        }
 
     def set_trading_mode(self, mode: TradingMode):
         """设置交易模式

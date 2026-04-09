@@ -70,7 +70,7 @@ class TelegramBotHandler:
 
         # 运行状态
         self.running = False
-        self.last_update_id = 0
+        self.last_update_id = None  # 初始为 None，获取最新消息
         self._thread: Optional[threading.Thread] = None
 
         # 命令处理映射
@@ -122,10 +122,15 @@ class TelegramBotHandler:
     def _get_updates(self) -> list:
         """获取更新"""
         url = f"{self.base_url}/getUpdates"
-        params = {
-            "offset": self.last_update_id + 1,
-            "limit": 100
-        }
+
+        # 如果 last_update_id 为 None，先获取最新消息但不处理
+        if self.last_update_id is None:
+            params = {"limit": 1}
+        else:
+            params = {
+                "offset": self.last_update_id + 1,
+                "limit": 100
+            }
 
         try:
             response = self.session.get(url, params=params, timeout=30)
@@ -134,6 +139,11 @@ class TelegramBotHandler:
             if result.get("ok"):
                 updates = result.get("result", [])
                 if updates:
+                    # 首次获取时，初始化 last_update_id 但不处理这些消息
+                    if self.last_update_id is None:
+                        self.last_update_id = updates[-1]["update_id"]
+                        return []  # 返回空列表，不处理历史消息
+
                     self.last_update_id = updates[-1]["update_id"]
                 return updates
         except Exception as e:

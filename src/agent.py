@@ -720,6 +720,15 @@ def main():
     # 运行
     if args.once:
         agent.run_single_cycle()
+        # 如果启用了 Bot，等待一段时间处理命令
+        if agent.bot_handler and agent.bot_handler.enabled:
+            print("\n[Agent] Bot 命令处理器运行中，按 Ctrl+C 停止...")
+            try:
+                import time
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("\n[Agent] 收到停止信号")
     else:
         agent.run_continuous(args.interval)
 

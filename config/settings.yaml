@@ -79,4 +79,4 @@ notifications:
     risk_alert: true       # 风控警报
     daily_report: true     # 每日报告
     system_error: true    # 系统错误
-    cycle_complete: false   # 交易周期完成
+    cycle_complete: true   # 交易周期完成 (开启以确认Agent运行状态)

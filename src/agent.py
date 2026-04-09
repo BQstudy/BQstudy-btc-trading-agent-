@@ -32,6 +32,7 @@ from evolution.distill_exporter import DistillExporter
 
 from utils.llm_client import create_llm_client, MultiRoleClient
 from utils.telegram_notifier import TelegramNotifier, create_notifier_from_config
+from utils.cot_logger import CoTLogger
 from exchange.exchange_factory import create_exchange_client
 from self_check import get_self_checker, SelfChecker
 
@@ -57,6 +58,9 @@ class BTCTradingAgent:
 
         # 自检查模块 (Layer 1)
         self.self_checker = get_self_checker()
+
+        # CoT日志记录器
+        self.cot_logger = CoTLogger()
 
     def _load_config(self) -> Dict:
         """加载配置"""
@@ -312,12 +316,30 @@ class BTCTradingAgent:
         # 格式化锚点
         flags_text = self.sentiment_analyzer.format_flags_for_prompt(regime_flags)
 
-        return {
+        perception_output = {
             **narrative_result,
             "market_data": market_data,
             "regime_flags": regime_flags,
             "regime_flags_text": flags_text
         }
+
+        # 记录CoT日志
+        market_context = {
+            "current_price": market_data.get("current_price", 0),
+            "market_type": narrative_result.get("market_type", "unknown"),
+            "sentiment": narrative_result.get("sentiment", "unknown"),
+        }
+        self.cot_logger.log(
+            phase="perception",
+            chain_of_thought=narrative_result.get("market_narrative", ""),
+            decision={
+                "sentiment": narrative_result.get("sentiment", "unknown"),
+                "market_type": narrative_result.get("market_type", "unknown"),
+            },
+            market_context=market_context
+        )
+
+        return perception_output
 
     def _run_judgment(self, perception_result: Dict) -> Dict:
         """运行主观判断"""
@@ -342,7 +364,7 @@ class BTCTradingAgent:
             # debate_result = self.multi_role_client.call_debate(...)
 
         # 简化：使用代码层分析结果
-        return {
+        judgment_output = {
             "market_regime": regime_analysis.regime.value,
             "regime_analysis": {
                 "trend_strength": regime_analysis.trend_strength,
@@ -363,6 +385,28 @@ class BTCTradingAgent:
             }
         }
 
+        # 记录CoT日志
+        analysis_text = f"""
+市场状态: {regime_analysis.regime.value}
+趋势强度: {regime_analysis.trend_strength}
+突破概率: {regime_analysis.breakout_probability}
+趋势证据: {regime_analysis.trend_evidence}
+失效条件: {regime_analysis.invalidation_condition}
+关键支撑: {[s.price for s in level_analysis.critical_supports[:3]]}
+关键阻力: {[r.price for r in level_analysis.critical_resistances[:3]]}
+当前区域: {level_analysis.current_zone}
+"""
+        self.cot_logger.log(
+            phase="judgment",
+            chain_of_thought=analysis_text,
+            decision={
+                "bias": perception_result.get("sentiment", "neutral"),
+                "confidence": 0.6 if perception_result.get("confidence") == "high" else 0.4,
+            }
+        )
+
+        return judgment_output
+
     def _run_decision(
         self,
         judgment_result: Dict,
@@ -378,7 +422,27 @@ class BTCTradingAgent:
             market_data=perception_result.get("market_data", {})
         )
 
-        return decision.to_dict()
+        decision_dict = decision.to_dict()
+
+        # 记录CoT日志
+        reason = decision_dict.get("reason_for_no_trade", "")
+        action = decision_dict.get("action", "no_trade")
+        chain_of_thought = f"""
+决策: {action}
+方向: {decision_dict.get('bias', 'neutral')}
+置信度: {decision_dict.get('confidence', 0)}
+入场区间: {decision_dict.get('entry_zone', [])}
+止损: {decision_dict.get('stop_loss', 0)}
+仓位: {decision_dict.get('position_size_pct', 0)}%
+理由: {reason if reason else '通过风控检查，执行交易'}
+"""
+        self.cot_logger.log(
+            phase="decision",
+            chain_of_thought=chain_of_thought,
+            decision=decision_dict
+        )
+
+        return decision_dict
 
     def _get_account_state(self) -> AccountState:
         """获取账户状态"""

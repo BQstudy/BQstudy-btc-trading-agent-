@@ -3,6 +3,7 @@
 """
 交易决策汇总推送脚本
 每6小时执行一次，推送之前6小时的交易决策汇总
+包含：市场分析思路、交易理由、决策详情
 """
 
 import os
@@ -25,11 +26,11 @@ def load_config():
         return yaml.safe_load(f)
 
 
-def get_recent_decisions(hours=6):
-    """获取最近N小时的交易决策"""
+def get_recent_cycles(hours=6):
+    """获取最近N小时的完整交易周期数据"""
     log_dir = Path("logs")
 
-    decisions = []
+    cycles = defaultdict(dict)  # {时间周期: {phase: entry}}
     cutoff_time = datetime.now() - timedelta(hours=hours)
 
     # 遍历所有日志文件
@@ -44,125 +45,207 @@ def get_recent_decisions(hours=6):
                     for line in f:
                         try:
                             entry = json.loads(line.strip())
-                            # 解析时间
+
+                            # 解析时间，提取小时作为周期标识
                             timestamp = entry.get("timestamp", "")
                             if timestamp:
                                 try:
-                                    # 尝试解析ISO格式
                                     dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-                                    dt = dt.replace(tzinfo=None)  # 转为本地时间
+                                    dt = dt.replace(tzinfo=None)
                                 except:
                                     continue
 
                                 if dt >= cutoff_time:
-                                    decisions.append({
-                                        "time": dt.strftime("%H:%M"),
-                                        "phase": phase,
-                                        "entry": entry
-                                    })
+                                    # 使用小时+分钟作为周期标识
+                                    cycle_key = dt.strftime("%Y-%m-%d %H:%M")
+
+                                    # 存储各阶段数据
+                                    if phase == "cot_perception":
+                                        cycles[cycle_key]["perception"] = {
+                                            "time": dt.strftime("%H:%M"),
+                                            "market_narrative": entry.get("chain_of_thought", "")[:500],
+                                            "sentiment": entry.get("decision", {}).get("sentiment", "unknown"),
+                                            "market_type": entry.get("decision", {}).get("market_type", "unknown"),
+                                        }
+                                    elif phase == "cot_judgment":
+                                        cycles[cycle_key]["judgment"] = {
+                                            "time": dt.strftime("%H:%M"),
+                                            "analysis": entry.get("chain_of_thought", "")[:800],
+                                            "bias": entry.get("decision", {}).get("bias", "neutral"),
+                                            "confidence": entry.get("decision", {}).get("confidence", 0),
+                                        }
+                                    elif phase == "cot_decision":
+                                        cycles[cycle_key]["decision"] = {
+                                            "time": dt.strftime("%H:%M"),
+                                            "action": entry.get("decision", {}).get("action", "unknown"),
+                                            "reason_for_no_trade": entry.get("decision", {}).get("reason_for_no_trade", ""),
+                                            "entry_zone": entry.get("decision", {}).get("entry_zone", []),
+                                            "stop_loss": entry.get("decision", {}).get("stop_loss", 0),
+                                            "position_size_pct": entry.get("decision", {}).get("position_size_pct", 0),
+                                        }
+
                         except:
                             continue
             except:
                 continue
 
-    return decisions
+    return cycles
 
 
-def analyze_decisions(decisions):
-    """分析决策数据"""
-    # 按时间排序
-    decisions.sort(key=lambda x: x["time"])
-
-    # 统计
-    stats = {
+def analyze_cycles(cycles):
+    """分析所有周期数据"""
+    result = {
         "total_cycles": 0,
         "trades": 0,
         "no_trades": 0,
-        "trade_details": [],
+        "trade_records": [],  # 开单记录
+        "no_trade_records": [],  # 不交易记录
     }
 
-    # 按周期分组
-    cycles = defaultdict(dict)
+    # 按时间排序
+    sorted_cycles = sorted(cycles.items(), key=lambda x: x[0])
 
-    for d in decisions:
-        time = d["time"]
-        phase = d["phase"]
-        entry = d["entry"]
+    for cycle_time, data in sorted_cycles:
+        decision = data.get("decision", {})
+        if not decision:
+            continue
 
-        # 提取小时
-        hour = time.split(":")[0]
+        action = decision.get("action", "unknown")
+        perception = data.get("perception", {})
+        judgment = data.get("judgment", {})
 
-        if phase == "cot_decision" and "decision" in entry:
-            # 这是决策阶段的日志
-            decision = entry.get("decision", {})
+        # 构建完整记录
+        record = {
+            "time": decision.get("time", cycle_time.split()[-1]),
+            "action": action,
+            # 市场感知
+            "market_type": perception.get("market_type", "unknown"),
+            "sentiment": perception.get("sentiment", "unknown"),
+            "market_narrative": perception.get("market_narrative", ""),
+            # 主观判断
+            "bias": judgment.get("bias", "neutral"),
+            "confidence": judgment.get("confidence", 0),
+            "analysis": judgment.get("analysis", ""),
+            # 决策
+            "entry_zone": decision.get("entry_zone", []),
+            "stop_loss": decision.get("stop_loss", 0),
+            "position_size": decision.get("position_size_pct", 0),
+            "reason": decision.get("reason_for_no_trade", ""),
+        }
 
-            # 提取决策信息
-            action = decision.get("action", "unknown")
-            bias = decision.get("bias", "unknown")
-            confidence = decision.get("confidence", 0)
-            reason = decision.get("reason_for_no_trade", "")
+        result["total_cycles"] += 1
 
-            # 判断是否开单
-            if action in ["long", "short"]:
-                stats["trades"] += 1
-                stats["trade_details"].append({
-                    "time": time,
-                    "action": action,
-                    "bias": bias,
-                    "confidence": confidence,
-                    "entry_zone": decision.get("entry_zone", []),
-                    "stop_loss": decision.get("stop_loss", ""),
-                    "position_size": decision.get("position_size_pct", 0),
-                })
-                stats["total_cycles"] += 1
-            elif action == "no_trade":
-                stats["no_trades"] += 1
-                stats["total_cycles"] += 1
+        if action in ["long", "short"]:
+            result["trades"] += 1
+            result["trade_records"].append(record)
+        elif action == "no_trade":
+            result["no_trades"] += 1
+            result["no_trade_records"].append(record)
 
-    return stats
+    return result
 
 
-def build_summary_message(stats, hours=6):
+def build_summary_message(data, hours=6):
     """构建汇总消息"""
     now = datetime.now()
     time_range = f"{now.strftime('%H:%M')}前{hours}小时"
 
-    # 标题
     message = f"""
 📊 *交易决策汇总*
 
 ⏰ 时间范围: {time_range}
-📈 周期总数: {stats['total_cycles']}
-🟢 开单次数: {stats['trades']}
-🔴 不交易次数: {stats['no_trades']}
+📈 周期总数: {data['total_cycles']}
+🟢 开单次数: {data['trades']}
+🔴 不交易次数: {data['no_trades']}
 
 """
 
-    # 开单详情
-    if stats["trade_details"]:
-        message += "📌 *开单记录:*\n"
-        for i, trade in enumerate(stats["trade_details"], 1):
+    # ==================== 开单详情 ====================
+    if data["trade_records"]:
+        message += "═" * 24 + "\n"
+        message += "📌 *开单记录*\n"
+        message += "═" * 24 + "\n\n"
+
+        for i, trade in enumerate(data["trade_records"], 1):
             emoji = "🟢" if trade["action"] == "long" else "🔴"
+
+            # 入场价
             entry_zone = trade.get("entry_zone", [])
             if entry_zone:
-                entry_text = f"{entry_zone[0]:.0f}-{entry_zone[-1]:.0f}" if len(entry_zone) > 1 else f"{entry_zone[0]:.0f}"
+                entry_text = f"{entry_zone[0]:,.0f}-{entry_zone[-1]:,.0f}"
             else:
                 entry_text = "市价"
 
+            # 交易理由
+            if trade.get("analysis"):
+                # 提取分析思路的关键部分
+                analysis = trade["analysis"]
+                # 取前200字符作为分析摘要
+                if len(analysis) > 200:
+                    analysis = analysis[:200] + "..."
+            else:
+                analysis = "无分析记录"
+
+            # 市场叙事
+            narrative = trade.get("market_narrative", "")
+            if narrative:
+                if len(narrative) > 150:
+                    narrative = narrative[:150] + "..."
+            else:
+                narrative = "无市场叙述"
+
             message += f"""
-{i}. {emoji} {trade['time']} | {trade['action'].upper()}
-   方向: {trade['bias']} | 置信度: {trade['confidence']:.0%}
-   入场: {entry_text} | 止损: {trade['stop_loss']:.0f} | 仓位: {trade['position_size']}%
+{i}. {emoji} *{trade['time']}* | {trade['action'].upper()}
+
+📊 *市场分析*
+{narrative}
+
+🧠 *判断思路*
+{analysis}
+
+📈 *决策参数*
+• 方向: {trade['bias']} | 置信度: {trade['confidence']:.0%}
+• 入场: {entry_text} | 止损: {trade['stop_loss']:,.0f}
+• 仓位: {trade['position_size']}%
+
 """
-    else:
-        message += "📌 *开单记录:* 无\n"
 
-    # 不交易详情（只显示前3个）
-    if stats["no_trades"] > 0:
-        # 这里可以进一步提取不交易的原因
-        message += f"\n📌 *不交易:* 共{stats['no_trades']}次\n"
+    # ==================== 不交易详情 ====================
+    if data["no_trade_records"]:
+        message += "═" * 24 + "\n"
+        message += "📌 *不交易记录*\n"
+        message += "═" * 24 + "\n\n"
 
-    message += f"\n⏰ {now.strftime('%Y-%m-%d %H:%M')}"
+        # 只显示最近3个不交易记录
+        for i, record in enumerate(data["no_trade_records"][-3:], 1):
+            # 市场情况
+            market_info = f"{record.get('market_type', 'unknown')}/{record.get('sentiment', 'unknown')}"
+
+            # 不交易理由
+            reason = record.get("reason", "无明确理由")
+            if record.get("analysis"):
+                # 提取不交易的分析思路
+                analysis = record["analysis"]
+                if len(analysis) > 150:
+                    analysis = analysis[:150] + "..."
+                reason = f"{reason}\n{analysis}" if reason else analysis
+
+            message += f"""
+{i}. *{record['time']}* | {market_info}
+
+📌 原因: {reason}
+
+"""
+
+        if len(data["no_trade_records"]) > 3:
+            message += f"\n... 还有 {len(data['no_trade_records']) - 3} 次不交易\n"
+
+    if not data["trade_records"] and not data["no_trade_records"]:
+        message += "📌 本时段无交易记录\n"
+
+    message += f"""
+⏰ 汇总时间: {now.strftime('%Y-%m-%d %H:%M')}
+"""
 
     return message
 
@@ -181,7 +264,6 @@ def send_notification(message):
             enabled=True
         )
 
-        # 简化消息发送
         return notifier.send_message(message)
 
     except Exception as e:
@@ -201,15 +283,18 @@ def main():
 
     print(f"[{datetime.now()}] 开始汇总最近{args.hours}小时的交易决策...")
 
-    # 获取决策
-    decisions = get_recent_decisions(hours=args.hours)
-    print(f"获取到 {len(decisions)} 条日志记录")
+    # 获取周期数据
+    cycles = get_recent_cycles(hours=args.hours)
+    print(f"获取到 {len(cycles)} 个交易周期")
 
-    # 分析
-    stats = analyze_decisions(decisions)
+    # 分析数据
+    data = analyze_cycles(cycles)
+    print(f"周期总数: {data['total_cycles']}")
+    print(f"开单次数: {data['trades']}")
+    print(f"不交易次数: {data['no_trades']}")
 
     # 构建消息
-    message = build_summary_message(stats, hours=args.hours)
+    message = build_summary_message(data, hours=args.hours)
 
     print("\n" + "=" * 50)
     print(message)

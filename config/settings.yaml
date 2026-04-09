@@ -47,7 +47,7 @@ risk:
 
 # 执行配置
 execution:
-  paper_trading: true  # 默认纸面交易
+  paper_trading: false  # 启用OKX模拟盘交易
   order_type: "limit_post_only"
   slippage_tolerance: 0.003
   max_slippage: 0.005

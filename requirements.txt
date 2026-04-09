@@ -15,8 +15,8 @@ openai>=1.0.0
 anthropic>=0.8.0
 
 # 数据库
-chromadb>=0.4.0
-sqlite3-python
+chromadb>=0.4.0,<1.0.0
+# sqlite3-python  # Python 3.11自带sqlite3，不需要额外安装
 
 # 工具
 python-dateutil>=2.8.2

@@ -430,19 +430,46 @@ class MonitorAgent:
         self._setup_logging()
 
     def _load_config(self, path: str) -> MonitorConfig:
-        """加载配置"""
+        """加载配置，支持环境变量覆盖"""
         config_file = PROJECT_ROOT / path
+        data = {}
 
+        # 从文件加载
         if config_file.exists():
             try:
                 with open(config_file, 'r') as f:
-                    data = yaml.safe_load(f)
-                    if data:
-                        return MonitorConfig(**data)
+                    data = yaml.safe_load(f) or {}
             except Exception as e:
                 print(f"[Monitor] 配置加载失败: {e}")
 
-        return MonitorConfig()
+        # 环境变量覆盖
+        env_overrides = {
+            'check_interval': os.environ.get('MONITOR_CHECK_INTERVAL'),
+            'health_endpoint': os.environ.get('MONITOR_HEALTH_ENDPOINT'),
+            'docker_container': os.environ.get('MONITOR_DOCKER_CONTAINER'),
+            'deploy_path': os.environ.get('MONITOR_DEPLOY_PATH'),
+            'auto_restart': os.environ.get('MONITOR_AUTO_RESTART'),
+            'max_restart_attempts': os.environ.get('MONITOR_MAX_RESTART_ATTEMPTS'),
+            'restart_cooldown': os.environ.get('MONITOR_RESTART_COOLDOWN'),
+            'notify_on_restart': os.environ.get('MONITOR_NOTIFY_ON_RESTART'),
+            'notify_on_error': os.environ.get('MONITOR_NOTIFY_ON_ERROR'),
+        }
+
+        # 应用覆盖
+        for key, value in env_overrides.items():
+            if value is not None:
+                # 类型转换
+                if key in ['auto_restart', 'notify_on_restart', 'notify_on_error']:
+                    data[key] = value.lower() in ('true', '1', 'yes')
+                elif key in ['check_interval', 'max_restart_attempts', 'restart_cooldown']:
+                    try:
+                        data[key] = int(value)
+                    except:
+                        pass
+                else:
+                    data[key] = value
+
+        return MonitorConfig(**data) if data else MonitorConfig()
 
     def _setup_logging(self):
         """设置日志"""

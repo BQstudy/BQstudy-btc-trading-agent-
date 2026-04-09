@@ -120,12 +120,13 @@ class TelegramBotHandler:
                 time.sleep(5)
 
     def _get_updates(self) -> list:
-        """获取更新"""
+        """获取更新（使用 long polling）"""
         url = f"{self.base_url}/getUpdates"
 
-        # 如果 last_update_id 为 None，先获取最新消息但不处理
+        # Long polling: 首次获取时设置 timeout 让服务器等待新消息
         if self.last_update_id is None:
-            params = {"limit": 1}
+            # 首次使用 long polling，等待最多 30 秒
+            params = {"timeout": 30, "limit": 100}
         else:
             params = {
                 "offset": self.last_update_id + 1,
@@ -133,18 +134,20 @@ class TelegramBotHandler:
             }
 
         try:
-            response = self.session.get(url, params=params, timeout=30)
+            response = self.session.get(url, params=params, timeout=35)
             result = response.json()
 
             if result.get("ok"):
                 updates = result.get("result", [])
                 if updates:
-                    # 首次获取时，初始化 last_update_id 但不处理这些消息
+                    # 首次获取时，只初始化 last_update_id，不处理历史消息
                     if self.last_update_id is None:
                         self.last_update_id = updates[-1]["update_id"]
+                        print(f"[TelegramBot] 初始化完成，跳过 {len(updates)} 条历史消息")
                         return []  # 返回空列表，不处理历史消息
 
                     self.last_update_id = updates[-1]["update_id"]
+                    print(f"[TelegramBot] 收到 {len(updates)} 条新消息")
                 return updates
         except Exception as e:
             print(f"[TelegramBot] 获取更新失败: {e}")

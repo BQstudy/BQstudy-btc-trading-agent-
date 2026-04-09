@@ -91,6 +91,45 @@ services:
     networks:
       - agent-network
 
+  # Layer 3: 定时汇总推送 (每天4次: 00:00, 06:00, 12:00, 18:00)
+  summary-cron:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: btc-summary-cron
+    restart: always
+
+    environment:
+      - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-8497683014:AAEhTmi5fUA-FC3lF_wb7U3LU-U2e5SO8KE}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-6415396006}
+
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../tools:/app/tools
+      - ../config:/app/config
+
+    working_dir: /app
+
+    # 使用cron定时执行: 每天0点、6点、12点、18点执行
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y cron &&
+        echo '0 0,6,12,18 * * * cd /app && python tools/daily_summary.py >> /app/logs/summary_cron.log 2>&1' | crontab - &&
+        cron -f
+      "
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+
+    networks:
+      - agent-network
+
 networks:
   agent-network:
     driver: bridge

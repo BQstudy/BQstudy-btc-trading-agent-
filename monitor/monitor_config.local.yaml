@@ -1,0 +1,31 @@
+# 监控Agent本地测试配置
+# 用于Windows本地开发测试
+
+# 检查配置
+check_interval: 60
+
+# 交易Agent配置 - 本地测试时使用localhost
+health_endpoint: "http://localhost:8080/health"
+docker_container: "btc-trading-agent"
+deploy_path: "."  # 当前目录
+
+# 自动修复配置 - 本地测试时关闭自动重启
+auto_restart: false
+max_restart_attempts: 0
+restart_cooldown: 300
+
+# 通知配置
+notify_on_restart: true
+notify_on_error: true
+notify_on_status: false
+
+# 日志配置
+log_level: "INFO"
+log_file: "logs/monitor.log"
+
+# 健康检查阈值
+thresholds:
+  max_cycle_gap_minutes: 70
+  max_error_count: 5
+  max_memory_percent: 80
+  max_restarts_per_hour: 3

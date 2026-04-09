@@ -21,7 +21,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./reports:/app/reports
-      - ./config:/app/config
+      # 注意: config不挂载，使用镜像内的配置
 
     # 日志配置
     logging:

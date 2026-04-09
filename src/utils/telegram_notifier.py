@@ -105,7 +105,34 @@ class TelegramNotifier:
             print(f"[Telegram] 发送异常: {e}")
             return False
 
-    def send_notification(self, message: NotificationMessage) -> bool:
+    def send_notification(
+        self,
+        title: str = "",
+        content: str = "",
+        message_type: str = "info",
+        message: NotificationMessage = None
+    ) -> bool:
+        """
+        发送格式化的通知消息
+
+        Args:
+            title: 通知标题
+            content: 通知内容
+            message_type: 消息类型 (info/warning/error/success)
+            message: NotificationMessage对象 (可选，优先使用)
+
+        Returns:
+            是否发送成功
+        """
+        # 如果传入message对象，使用它
+        if message is not None:
+            msg = message
+        else:
+            msg = NotificationMessage(
+                title=title,
+                content=content,
+                message_type=message_type
+            )
         """
         发送格式化的通知消息
 
@@ -115,14 +142,14 @@ class TelegramNotifier:
         Returns:
             是否发送成功
         """
-        emoji = self.type_emoji.get(message.message_type, "ℹ️")
+        emoji = self.type_emoji.get(msg.message_type, "ℹ️")
 
         formatted_text = f"""
-{emoji} *{message.title}*
+{emoji} *{msg.title}*
 
-{message.content}
+{msg.content}
 
-⏰ {message.timestamp}
+⏰ {msg.timestamp}
 """
         return self.send_message(formatted_text)
 

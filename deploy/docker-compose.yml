@@ -1,42 +1,38 @@
 services:
+  # Layer 1: 交易Agent
   btc-agent:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
     container_name: btc-trading-agent
     restart: unless-stopped
+    expose:
+      - "8080"
 
     # 环境变量
     environment:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
-      - TELEGRAM_BOT_TOKEN=8497683014:AAEhTmi5fUA-FC3lF_wb7U3LU-U2e5SO8KE
-      - TELEGRAM_CHAT_ID=6415396006
-      - OKX_API_KEY=bedc2600-1879-416a-9375-3c7a6c594c50
-      - OKX_API_SECRET=F68A63AA108E8B6BC20BA58BF327F6A2
-      - OKX_PASSPHRASE=Bc887720.
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-8497683014:AAEhTmi5fUA-FC3lF_wb7U3LU-U2e5SO8KE}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-6415396006}
+      - OKX_API_KEY=${OKX_API_KEY:-bedc2600-1879-416a-9375-3c7a6c594c50}
+      - OKX_API_SECRET=${OKX_API_SECRET:-F68A63AA108E8B6BC20BA58BF327F6A2}
+      - OKX_PASSPHRASE=${OKX_PASSPHRASE:-Bc887720.}
 
     # 数据持久化
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./reports:/app/reports
-      # 注意: config不挂载，使用镜像内的配置
-
-    # 日志配置
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../reports:/app/reports
+      - ../config:/app/config
 
     # 健康检查
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
     # 资源限制
     deploy:
@@ -48,36 +44,54 @@ services:
           cpus: '0.5'
           memory: 256M
 
-  # 可选：监控服务
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: btc-agent-prometheus
-    restart: unless-stopped
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    profiles:
-      - monitoring
+    # 依赖网络
+    networks:
+      - agent-network
 
-  # 可选：日志收集
-  loki:
-    image: grafana/loki:latest
-    container_name: btc-agent-loki
-    restart: unless-stopped
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml
-      - loki_data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
-    profiles:
-      - monitoring
+  # Layer 2: 监控Agent
+  monitor-agent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: btc-monitor-agent
+    restart: always
+    depends_on:
+      - btc-agent
 
-volumes:
-  prometheus_data:
-  loki_data:
+    # 环境变量
+    environment:
+      - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-8497683014:AAEhTmi5fUA-FC3lF_wb7U3LU-U2e5SO8KE}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-6415396006}
+
+    # 访问宿主机docker socket (用于重启容器)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../monitor:/app/monitor
+      - ../config:/app/config
+
+    # 工作目录
+    working_dir: /app
+
+    # 启动命令
+    command: ["python", "monitor/monitor_agent.py"]
+
+    # 资源限制 (监控Agent资源需求较低)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+    networks:
+      - agent-network
+
+networks:
+  agent-network:
+    driver: bridge

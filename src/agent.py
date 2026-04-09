@@ -32,6 +32,7 @@ from evolution.distill_exporter import DistillExporter
 from utils.llm_client import create_llm_client, MultiRoleClient
 from utils.telegram_notifier import TelegramNotifier, create_notifier_from_config
 from exchange.exchange_factory import create_exchange_client
+from self_check import get_self_checker, SelfChecker
 
 
 class BTCTradingAgent:
@@ -52,6 +53,9 @@ class BTCTradingAgent:
         # 运行状态
         self.running = False
         self.paper_trading = True  # 默认纸面交易
+
+        # 自检查模块 (Layer 1)
+        self.self_checker = get_self_checker()
 
     def _load_config(self) -> Dict:
         """加载配置"""
@@ -201,6 +205,9 @@ class BTCTradingAgent:
             print("交易周期完成")
             print(f"{'='*60}\n")
 
+            # 记录周期完成 (Layer 1自检查)
+            self.self_checker.record_cycle_complete()
+
             # 发送周期完成通知（包含思考过程）
             if self.notifier and self.notify_on_cycle:
                 action = decision_result.get("action", "no_trade")
@@ -249,11 +256,17 @@ class BTCTradingAgent:
 """
 
                 msg_type = "success" if action != "no_trade" else "info"
-                self.notifier.send_notification(
+                notify_success = self.notifier.send_notification(
                     title=f"交易周期完成 | {action.upper()}",
                     content=content,
                     message_type=msg_type
                 )
+
+                # 记录Telegram发送状态 (Layer 1自检查)
+                if notify_success:
+                    self.self_checker.record_telegram_success()
+                else:
+                    self.self_checker.record_telegram_failure("发送失败")
 
             return result
 
@@ -262,6 +275,12 @@ class BTCTradingAgent:
             import traceback
             traceback.print_exc()
             result["error"] = str(e)
+
+            # 记录错误 (Layer 1自检查)
+            self.self_checker.record_error(
+                str(e),
+                {"phase": "main_cycle", "type": type(e).__name__}
+            )
 
             # 发送错误通知
             if self.notifier:
@@ -527,18 +546,37 @@ def main():
 
 # 健康检查端点
 def run_health_server():
-    """运行简单的HTTP健康检查服务器"""
+    """运行HTTP健康检查服务器，集成自检查数据"""
     import http.server
     import socketserver
     import threading
+    from self_check import get_self_checker
+
+    checker = get_self_checker()
 
     class HealthHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path == "/health":
+                # 获取自检查状态
+                status = checker.get_simple_status()
+
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
-                self.wfile.write(b'{"status": "ok"}')
+                self.wfile.write(json.dumps(status).encode())
+
+            elif self.path == "/health/detail":
+                # 获取详细状态
+                status = checker.get_health_status()
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+
+                # 转换为可序列化的字典
+                import dataclasses
+                self.wfile.write(json.dumps(dataclasses.asdict(status)).encode())
+
             else:
                 self.send_response(404)
                 self.end_headers()

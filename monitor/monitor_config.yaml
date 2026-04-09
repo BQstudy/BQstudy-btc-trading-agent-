@@ -1,0 +1,31 @@
+# 监控Agent配置文件
+# Layer 2: 监控交易Agent的健康状态
+
+# 检查配置
+check_interval: 60  # 检查间隔(秒)，不要低于30秒
+
+# 交易Agent配置
+health_endpoint: "http://btc-agent:8080/health"  # Docker内部地址
+docker_container: "btc-trading-agent"
+deploy_path: "/opt/btc-agent"
+
+# 自动修复配置
+auto_restart: true  # 是否允许自动重启
+max_restart_attempts: 3  # 最大重启次数
+restart_cooldown: 300  # 重启冷却时间(秒)
+
+# 通知配置
+notify_on_restart: true   # 重启时通知
+notify_on_error: true     # 出错时通知
+notify_on_status: false   # 定期状态通知(可选)
+
+# 日志配置
+log_level: "INFO"
+log_file: "logs/monitor.log"
+
+# 健康检查阈值
+thresholds:
+  max_cycle_gap_minutes: 70     # 周期最大间隔(分钟)
+  max_error_count: 5            # 最近1小时最大错误数
+  max_memory_percent: 80        # 最大内存使用百分比
+  max_restarts_per_hour: 3      # 每小时最大重启次数

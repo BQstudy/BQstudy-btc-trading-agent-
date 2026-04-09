@@ -115,7 +115,7 @@ class BTCTradingAgent:
             self.notify_on_trade = notify_config.get("trade_execution", True)
             self.notify_on_close = notify_config.get("trade_closed", True)
             self.notify_on_risk = notify_config.get("risk_alert", True)
-            self.notify_on_cycle = notify_config.get("cycle_complete", False)
+            self.notify_on_cycle = notify_config.get("cycle_complete", True)
         except Exception as e:
             print(f"Warning: Telegram notifier initialization failed: {e}")
             self.notifier = None
@@ -225,7 +225,7 @@ class BTCTradingAgent:
                 entry_zone = decision.get("entry_zone", "无")
                 stop_loss = decision.get("stop_loss", "无")
                 position_size = decision.get("position_size_pct", 0)
-                reason = decision.get("reason_for_no_trade', '无")
+                reason = decision.get("reason_for_no_trade", "无")
                 if action != "no_trade":
                     reason = f"止损{stop_loss}，仓位{position_size}%"
 

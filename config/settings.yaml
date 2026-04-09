@@ -54,7 +54,7 @@ execution:
 
 # 运行配置
 runtime:
-  cycle_interval_seconds: 3600  # 每小时运行一次
+  cycle_interval_seconds: 1800  # 每30分钟运行一次
   enable_logging: true
   log_level: "INFO"
 

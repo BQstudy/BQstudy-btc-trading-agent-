@@ -164,7 +164,7 @@ screen -S btc-agent
 # 运行Agent
 cd /opt/btc-agent
 source venv/bin/activate
-python src/agent.py --paper --interval 3600
+python src/agent.py --paper --interval 1800
 
 # 分离会话: Ctrl+A, 然后按D
 # 重新连接: screen -r btc-agent
@@ -189,7 +189,7 @@ Environment="TELEGRAM_CHAT_ID=6415396006"
 Environment="OKX_API_KEY=bedc2600-1879-416a-9375-3c7a6c594c50"
 Environment="OKX_API_SECRET=F68A63AA108E8B6BC20BA58BF327F6A2"
 Environment="OKX_PASSPHRASE=Bc887720."
-ExecStart=/opt/btc-agent/venv/bin/python src/agent.py --paper --interval 3600
+ExecStart=/opt/btc-agent/venv/bin/python src/agent.py --paper --interval 1800
 Restart=always
 RestartSec=10
 

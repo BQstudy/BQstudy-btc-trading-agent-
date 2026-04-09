@@ -21,8 +21,6 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua
 # 复制项目代码
 COPY src/ ./src/
 COPY config/ ./config/
-COPY data/ ./data/
-COPY logs/ ./logs/
 
 # 创建必要的目录
 RUN mkdir -p data logs reports

@@ -1028,7 +1028,7 @@ def run_health_server():
         def log_message(self, format, *args):
             pass  # 静默日志
 
-    port = 8080
+    port = 8081  # 修改为8081避免端口冲突
     with socketserver.TCPServer(("", port), HealthHandler) as httpd:
         print(f"健康检查服务器运行在 http://localhost:{port}/health")
         httpd.serve_forever()

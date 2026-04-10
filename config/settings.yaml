@@ -6,7 +6,7 @@ created_at: '2025-01-15'
 trading:
   symbol: "BTC/USDT:USDT"
   timeframes: ["15m", "1h", "4h", "1d"]
-  default_timeframe: "1h"
+  default_timeframe: "15m"  # 超短线交易周期
 
 # LLM配置
 # 腾讯云Kimi API配置 (Coding Plan)
@@ -57,7 +57,7 @@ execution:
 
 # 运行配置
 runtime:
-  cycle_interval_seconds: 1800  # 每30分钟运行一次
+  cycle_interval_seconds: 900  # 每15分钟运行一次（超短线交易）
   enable_logging: true
   log_level: "INFO"
 

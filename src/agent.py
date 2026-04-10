@@ -56,6 +56,7 @@ from utils.llm_client import create_llm_client, MultiRoleClient
 from utils.telegram_notifier import TelegramNotifier, create_notifier_from_config
 from utils.telegram_bot import TelegramBotHandler, create_bot_handler, TradingMode as BotTradingMode
 from utils.cot_logger import CoTLogger
+from utils.cot_aggregator import CoTAggregator, CycleCoT
 from exchange.exchange_factory import create_exchange_client
 from self_check import get_self_checker, SelfChecker
 
@@ -84,6 +85,9 @@ class BTCTradingAgent:
 
         # CoT日志记录器
         self.cot_logger = CoTLogger()
+
+        # CoT聚合推送器（每天4次推送）
+        self.cot_aggregator = CoTAggregator()
 
         # 初始化各模块（在 trading_mode 初始化之后）
         self._init_modules()
@@ -254,50 +258,65 @@ class BTCTradingAgent:
             # 记录周期完成 (Layer 1自检查)
             self.self_checker.record_cycle_complete()
 
-            # 发送周期完成通知（包含思考过程）
+            # ========== 将CoT添加到聚合器 ==========
+            perception = perception_result or {}
+            judgment = judgment_result or {}
+            decision = decision_result or {}
+            market_data = perception.get("market_data", {})
+
+            # 获取各周期实时价格
+            timeframe_prices = {}
+            multi_tf_klines = market_data.get("multi_tf_klines", {})
+            for tf, klines in multi_tf_klines.items():
+                if klines and len(klines) > 0:
+                    timeframe_prices[tf] = klines[-1].get("close", 0)
+
+            current_price = market_data.get("current_price", 0)
+
+            # 提取判断摘要
+            final_judgment = judgment.get("final_judgment", {})
+            bias = final_judgment.get("bias", "neutral")
+            confidence = final_judgment.get("confidence", 0)
+
+            # 提取辩论摘要
+            debate_summary = ""
+            if judgment.get("debate_summary"):
+                ds = judgment.get("debate_summary", {})
+                debate_summary = ds.get("bull_case", "") + ds.get("bear_case", "")
+
+            # 创建CycleCoT对象
+            cycle_cot = CycleCoT(
+                timestamp=datetime.utcnow().isoformat() + "Z",
+                cycle_id=result.get("call_id", ""),
+                current_price=current_price,
+                timeframe_prices=timeframe_prices,
+                market_type=perception.get("market_type", ""),
+                sentiment=perception.get("sentiment", ""),
+                market_narrative=perception.get("market_narrative", ""),
+                bias=bias,
+                confidence=confidence,
+                debate_summary=debate_summary,
+                action=decision_result.get("action", "no_trade"),
+                entry_zone=decision_result.get("entry_zone", []),
+                stop_loss=decision_result.get("stop_loss", 0),
+                risk_reward=decision_result.get("risk_reward_ratio", 0)
+            )
+
+            # 添加到聚合器
+            self.cot_aggregator.add_cycle_cot(cycle_cot)
+
+            # ========== 发送周期完成通知（要点化格式）==========
             if self.notifier and self.notify_on_cycle:
                 action = decision_result.get("action", "no_trade")
 
-                # 收集思考过程
-                perception = perception_result or {}
-                judgment = judgment_result or {}
-                decision = decision_result or {}
-
-                # Phase 1 感知摘要
-                market_narrative = perception.get("market_narrative", "")[:200] if perception.get("market_narrative") else "无"
-                sentiment = perception.get("sentiment", "unknown")
-                market_type = perception.get("market_type", "unknown")
-
-                # Phase 2 判断摘要
-                final_judgment = judgment.get("final_judgment", {})
-                bias = final_judgment.get("bias", "neutral")
-                confidence = final_judgment.get("confidence", 0)
-                debate_summary = judgment.get("debate_summary", "")[:300] if judgment.get("debate_summary") else "无"
-
-                # Phase 3 决策摘要
-                entry_zone = decision.get("entry_zone", "无")
-                stop_loss = decision.get("stop_loss", "无")
-                position_size = decision.get("position_size_pct", 0)
-                reason = decision.get("reason_for_no_trade", "无")
-                if action != "no_trade":
-                    reason = f"止损{stop_loss}，仓位{position_size}%"
-
-                # 组装详细通知 (使用HTML格式避免Markdown解析错误)
-                content = f"""📊 <b>市场感知</b>
-• 类型: {market_type}
-• 情绪: {sentiment}
-• 叙述: {market_narrative}...
-
-🧠 <b>主观判断</b>
-• 方向: {bias}
-• 置信度: {confidence:.0%}
-• 辩论: {debate_summary}...
-
-📌 <b>最终决策</b>
-• 行动: {action}
-• {reason}
-
-⏰ {datetime.now().strftime("%H:%M:%S")}"""
+                # 要点化推送内容
+                content = self._format_cycle_notification(
+                    perception=perception,
+                    judgment=judgment,
+                    decision=decision_result,
+                    current_price=current_price,
+                    timeframe_prices=timeframe_prices
+                )
 
                 msg_type = "success" if action != "no_trade" else "info"
                 notify_success = self.notifier.send_notification(
@@ -311,6 +330,9 @@ class BTCTradingAgent:
                     self.self_checker.record_telegram_success()
                 else:
                     self.self_checker.record_telegram_failure("发送失败")
+
+            # ========== 检查是否需要推送汇总 ==========
+            self._check_and_push_aggregated_cot()
 
             return result
 
@@ -381,51 +403,143 @@ class BTCTradingAgent:
         return perception_output
 
     def _run_judgment(self, perception_result: Dict) -> Dict:
-        """运行主观判断"""
-        # 行情性质判断
+        """运行主观判断 - 多角色辩论"""
+        # 行情性质判断（代码层）
         multi_tf = perception_result.get("market_data", {}).get("multi_tf_klines", {})
         regime_analysis = self.regime_detector.analyze(multi_tf)
 
-        # 支撑压力分析
+        # 支撑压力分析（代码层）
         current_price = perception_result.get("market_data", {}).get("current_price", 0)
         level_analysis = self.level_analyzer.analyze(multi_tf, current_price)
 
+        debate_result = None
+
         # 多角色辩论（使用LLM）
         if self.multi_role_client:
-            # 生成用户消息
-            user_message = self.debate_engine.generate_user_message(
-                perception_output=perception_result,
-                regime_flags=perception_result.get("regime_flags", {}),
-                market_data=perception_result.get("market_data", {})
-            )
+            try:
+                print("  [LLM辩论] 启动多角色辩论...")
 
-            # 这里简化处理，实际应该调用多角色辩论
-            # debate_result = self.multi_role_client.call_debate(...)
+                # 加载提示词配置
+                import yaml
+                with open("prompts/judgment_v1.yaml", 'r', encoding='utf-8') as f:
+                    prompt_config = yaml.safe_load(f)
 
-        # 简化：使用代码层分析结果
-        judgment_output = {
-            "market_regime": regime_analysis.regime.value,
-            "regime_analysis": {
-                "trend_strength": regime_analysis.trend_strength,
-                "breakout_probability": regime_analysis.breakout_probability,
-                "trend_evidence": regime_analysis.trend_evidence,
-                "invalidation_condition": regime_analysis.invalidation_condition
-            },
-            "level_analysis": {
-                "key_supports": [s.price for s in level_analysis.critical_supports[:3]],
-                "key_resistances": [r.price for r in level_analysis.critical_resistances[:3]],
-                "current_zone": level_analysis.current_zone
-            },
-            "final_judgment": {
-                "bias": perception_result.get("sentiment", "neutral"),
-                "confidence": 0.6 if perception_result.get("confidence") == "high" else 0.4,
-                "strength": "moderate",
-                "key_invalidation": regime_analysis.invalidation_condition
+                # 生成用户消息
+                user_message = self.debate_engine.generate_user_message(
+                    perception_output=perception_result,
+                    regime_flags=perception_result.get("regime_flags", {}),
+                    market_data=perception_result.get("market_data", {})
+                )
+
+                # 构建各角色系统提示词
+                coordinator_system = prompt_config.get("coordinator_system", "")
+                role_prompts = prompt_config.get("role_prompts", {})
+
+                system_prompts = {
+                    "bull": coordinator_system + "\n\n" + role_prompts.get("bull", ""),
+                    "bear": coordinator_system + "\n\n" + role_prompts.get("bear", ""),
+                    "neutral": coordinator_system + "\n\n" + role_prompts.get("neutral", ""),
+                    "risk": coordinator_system + "\n\n" + role_prompts.get("risk", ""),
+                    "judge": coordinator_system + "\n\n" + role_prompts.get("judge", "")
+                }
+
+                # 调用多角色辩论
+                debate_responses = self.multi_role_client.call_debate(
+                    system_prompts=system_prompts,
+                    user_message=user_message,
+                    phase="judgment"
+                )
+
+                # 解析辩论结果
+                debate_text = ""
+                for role, response in debate_responses.items():
+                    debate_text += f"\n\n=== {role.upper()} ===\n{response.content}"
+
+                debate_result = self.debate_engine.parse_debate_response(debate_text)
+
+                # 验证辩论质量
+                debate_result = self.debate_engine.validate_and_grade(
+                    debate_result,
+                    perception_result.get("regime_flags", {})
+                )
+
+                print(f"  [LLM辩论] 辩论多样性分数: {debate_result.debate_diversity_score:.2f}")
+                print(f"  [LLM辩论] 锚点合规分数: {debate_result.anchor_compliance_score:.2f}")
+                print(f"  [LLM辩论] 检测到矛盾: {debate_result.contradiction_detected}")
+
+            except Exception as e:
+                print(f"  [LLM辩论] 警告: 辩论执行失败，使用代码层分析: {e}")
+                debate_result = None
+
+        # 构建最终判断输出
+        if debate_result and debate_result.final_judgment:
+            # 使用LLM辩论结果
+            judgment_output = {
+                "market_regime": regime_analysis.regime.value,
+                "regime_analysis": {
+                    "trend_strength": regime_analysis.trend_strength,
+                    "breakout_probability": regime_analysis.breakout_probability,
+                    "trend_evidence": regime_analysis.trend_evidence,
+                    "invalidation_condition": regime_analysis.invalidation_condition
+                },
+                "level_analysis": {
+                    "key_supports": [s.price for s in level_analysis.critical_supports[:3]],
+                    "key_resistances": [r.price for r in level_analysis.critical_resistances[:3]],
+                    "current_zone": level_analysis.current_zone
+                },
+                "final_judgment": debate_result.final_judgment,
+                "debate_summary": {
+                    "bull_case": debate_result.bull_case.get("reasoning", "")[:200],
+                    "bear_case": debate_result.bear_case.get("reasoning", "")[:200],
+                    "risk_assessment": debate_result.risk_assessment[:150] if debate_result.risk_assessment else "",
+                    "diversity_score": debate_result.debate_diversity_score,
+                    "anchor_compliance_score": debate_result.anchor_compliance_score,
+                    "contradiction_detected": debate_result.contradiction_detected
+                }
             }
-        }
 
-        # 记录CoT日志
-        analysis_text = f"""
+            # 记录完整辩论CoT
+            full_debate_cot = f"""
+=== BULL CASE ===
+{debate_result.bull_case.get("reasoning", "")}
+
+=== BEAR CASE ===
+{debate_result.bear_case.get("reasoning", "")}
+
+=== NEUTRAL CRITIQUE ===
+{debate_result.neutral_critique}
+
+=== RISK ASSESSMENT ===
+{debate_result.risk_assessment}
+
+=== FINAL JUDGMENT ===
+{debate_result.final_judgment.get("reasoning", "")}
+"""
+        else:
+            # 使用代码层分析结果（降级）
+            judgment_output = {
+                "market_regime": regime_analysis.regime.value,
+                "regime_analysis": {
+                    "trend_strength": regime_analysis.trend_strength,
+                    "breakout_probability": regime_analysis.breakout_probability,
+                    "trend_evidence": regime_analysis.trend_evidence,
+                    "invalidation_condition": regime_analysis.invalidation_condition
+                },
+                "level_analysis": {
+                    "key_supports": [s.price for s in level_analysis.critical_supports[:3]],
+                    "key_resistances": [r.price for r in level_analysis.critical_resistances[:3]],
+                    "current_zone": level_analysis.current_zone
+                },
+                "final_judgment": {
+                    "bias": perception_result.get("sentiment", "neutral"),
+                    "confidence": 0.5,
+                    "strength": "moderate",
+                    "key_invalidation": regime_analysis.invalidation_condition,
+                    "reasoning": "基于代码层分析（LLM辩论未执行）"
+                }
+            }
+
+            full_debate_cot = f"""
 市场状态: {regime_analysis.regime.value}
 趋势强度: {regime_analysis.trend_strength}
 突破概率: {regime_analysis.breakout_probability}
@@ -434,14 +548,15 @@ class BTCTradingAgent:
 关键支撑: {[s.price for s in level_analysis.critical_supports[:3]]}
 关键阻力: {[r.price for r in level_analysis.critical_resistances[:3]]}
 当前区域: {level_analysis.current_zone}
+
+[注意: 多角色辩论未执行，使用代码层分析结果]
 """
+
+        # 记录CoT日志
         self.cot_logger.log(
             phase="judgment",
-            chain_of_thought=analysis_text,
-            decision={
-                "bias": perception_result.get("sentiment", "neutral"),
-                "confidence": 0.6 if perception_result.get("confidence") == "high" else 0.4,
-            }
+            chain_of_thought=full_debate_cot,
+            decision=judgment_output["final_judgment"]
         )
 
         return judgment_output
@@ -482,6 +597,130 @@ class BTCTradingAgent:
         )
 
         return decision_dict
+
+    def _format_cycle_notification(
+        self,
+        perception: Dict,
+        judgment: Dict,
+        decision: Dict,
+        current_price: float,
+        timeframe_prices: Dict
+    ) -> str:
+        """
+        格式化周期完成通知内容（要点化、落实到价格）
+        """
+        # Phase 1: 感知（要点化）
+        sentiment = perception.get("sentiment", "unknown")
+        sentiment_emoji = "🔴" if sentiment == "bullish" else "🟢" if sentiment == "bearish" else "⚪"
+        market_type = perception.get("market_type", "unknown")
+
+        narrative = perception.get("market_narrative", "")[:150] if perception.get("market_narrative") else "无"
+
+        # Phase 2: 判断
+        final_judgment = judgment.get("final_judgment", {})
+        bias = final_judgment.get("bias", "neutral")
+        confidence = final_judgment.get("confidence", 0)
+        bias_emoji = "🔴" if bias == "bullish" else "🟢" if bias == "bearish" else "⚪"
+
+        # 辩论摘要
+        debate_summary = ""
+        if judgment.get("debate_summary"):
+            ds = judgment.get("debate_summary", {})
+            debate_summary = f"辩论多样性: {ds.get('diversity_score', 0):.2f}"
+
+        # Phase 3: 决策
+        action = decision.get("action", "no_trade")
+        entry_zone = decision.get("entry_zone", [])
+        stop_loss = decision.get("stop_loss", 0)
+        risk_reward = decision.get("risk_reward_ratio", 0)
+        position_size = decision.get("position_size_pct", 0)
+
+        # 各周期价格
+        timeframe_text = []
+        for tf, price in timeframe_prices.items():
+            if price > 0:
+                timeframe_text.append(f"{tf}: ${price:,.2f}")
+
+        # 组装要点化通知
+        lines = [
+            f"💰 <b>实时价格</b>",
+            f"• BTC现货: ${current_price:,.2f}",
+        ]
+
+        if timeframe_text:
+            lines.append(f"• 各周期: {', '.join(timeframe_text[:4])}")  # 最多显示4个
+
+        lines.extend([
+            "",
+            f"📊 <b>市场感知</b>",
+            f"{sentiment_emoji} 情绪: {sentiment} | 类型: {market_type}",
+            f"• 叙述: {narrative}...",
+            "",
+            f"🧠 <b>主观判断</b>",
+            f"{bias_emoji} 方向: {bias.upper()} (置信度: {confidence:.0%})",
+        ])
+
+        if debate_summary:
+            lines.append(f"• {debate_summary}")
+
+        lines.append("")
+
+        # 决策详情
+        if action == "no_trade":
+            reason = decision.get("reason_for_no_trade", "无")
+            lines.extend([
+                f"📌 <b>最终决策: 观望</b>",
+                f"• 原因: {reason}",
+            ])
+        else:
+            entry_str = f"{entry_zone[0]:,.0f}-{entry_zone[1]:,.0f}" if len(entry_zone) >= 2 else f"{entry_zone[0]:,.0f}" if entry_zone else "N/A"
+            rr_str = f"RR={risk_reward:.1f}" if risk_reward > 0 else ""
+            lines.extend([
+                f"📌 <b>最终决策: {action.upper()}</b>",
+                f"• 入场区间: ${entry_str}",
+                f"• 止损价格: ${stop_loss:,.2f}",
+                f"• 风险收益比: {rr_str}",
+                f"• 仓位占比: {position_size}%",
+            ])
+
+        lines.extend([
+            "",
+            f"⏰ {datetime.now().strftime('%H:%M:%S')}"
+        ])
+
+        return "\n".join(lines)
+
+    def _check_and_push_aggregated_cot(self):
+        """检查并推送汇总的CoT"""
+        if not self.cot_aggregator.should_push_now():
+            return
+
+        # 获取待推送的CoT
+        pending_cots = self.cot_aggregator.get_pending_cots()
+
+        if not pending_cots:
+            print("  [CoT聚合] 无待推送内容")
+            self.cot_aggregator.last_push_time = datetime.now()
+            return
+
+        print(f"  [CoT聚合] 推送{len(pending_cots)}个周期的汇总...")
+
+        # 格式化推送内容
+        content = self.cot_aggregator.format_push_content(pending_cots)
+
+        # 发送推送
+        if self.notifier:
+            success = self.notifier.send_notification(
+                title=f"📊 CoT周期汇总 ({len(pending_cots)}个)",
+                content=content,
+                message_type="info"
+            )
+
+            if success:
+                print(f"  [CoT聚合] 推送成功")
+                self.cot_aggregator.clear_after_push()
+            else:
+                print(f"  [CoT聚合] 推送失败，保留内容待下次推送")
 
     def _get_account_state(self) -> AccountState:
         """获取账户状态"""
@@ -588,12 +827,24 @@ class BTCTradingAgent:
                 message_type="success"
             )
 
+        # 上次推送检查时间
+        last_push_check = datetime.now()
+
         while self.running:
             try:
                 self.run_single_cycle()
 
+                # 在等待期间定期检查是否需要推送CoT汇总
                 print(f"等待 {interval_seconds} 秒...")
-                time.sleep(interval_seconds)
+                elapsed = 0
+                while elapsed < interval_seconds and self.running:
+                    time.sleep(60)  # 每分钟检查一次
+                    elapsed += 60
+
+                    # 检查推送
+                    if (datetime.now() - last_push_check).seconds >= 300:  # 每5分钟检查
+                        self._check_and_push_aggregated_cot()
+                        last_push_check = datetime.now()
 
             except KeyboardInterrupt:
                 print("\n收到停止信号，正在退出...")
@@ -706,7 +957,7 @@ def main():
     parser.add_argument("--mode", choices=["simulation", "live"],
                         default="simulation", help="交易模式: simulation=模拟交易(OKX模拟盘), live=实盘交易")
     parser.add_argument("--once", action="store_true", help="运行单次周期")
-    parser.add_argument("--interval", type=int, default=3600, help="运行间隔（秒）")
+    parser.add_argument("--interval", type=int, default=900, help="运行间隔（秒），默认15分钟")
 
     args = parser.parse_args()
 

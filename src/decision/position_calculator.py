@@ -187,7 +187,7 @@ class PositionCalculator:
         self,
         entry_price: float,
         stop_loss: float,
-        risk_reward_ratios: List[float] = [1.5, 2.5, 3.5]
+        risk_reward_ratios: List[float] = [1.0, 1.5, 2.0]  # 盈亏比>=1:1即进行交易
     ) -> List[Dict]:
         """
         计算分批止盈目标
